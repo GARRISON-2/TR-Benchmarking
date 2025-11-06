@@ -1,0 +1,17 @@
+*
+!/catalogs/
+!/envs/
+!/atarva/
+!/longtr/
+!/mosdepth/
+!/straglr/
+!/strdust/
+!/strkit/
+!/trgt/
+!/trsv/
+!/vamos/
+!/*.nf
+!/*.sh
+!/README.md
+!/LICENSE
+!/.gitignore
