@@ -1,0 +1,1 @@
+LRsv call: /opt/local/tools/TRsv/scripts/TRsv_nonhifi_v1.1.pl -b /data/OMLR22_002.haplotagged.cram -r /ref/human_GRCh38_no_alt_analysis_set.fasta -x ont --build 38 -p OMLR22_002_trsv -n 8

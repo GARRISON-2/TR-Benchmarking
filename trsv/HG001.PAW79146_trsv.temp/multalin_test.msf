@@ -1,0 +1,37 @@
+Multalin version 5.4.1
+Copyright I.N.R.A. France 1989, 1991, 1994, 1996
+Published research using this software should cite
+Multiple sequence alignment with hierarchical clustering
+F. CORPET, 1988, Nucl. Acids Res., 16 (22), 10881-10890
+Symbol comparison table: blosum62
+Gap weight: 12
+Gap length weight: 2
+Consensus levels: high=90% low=50%
+Consensus symbols:
+ ! is anyone of IV
+ $ is anyone of LM
+ % is anyone of FY
+ # is anyone of NDQEBZ
+
+ MSF:    144    Check:   0         ..
+ Name: STR            Len:   144  Check: 7259  Weight:  1.00
+ Name: INS            Len:   144  Check: 2470  Weight:  1.00
+ Name: Consensus      Len:   144  Check: 2470  Weight:  0.00
+
+//
+
+                      1                                                   50
+                 STR  GCTGGGCACA GTGGCACATG CCTGTAGTCC CAGCTCCTCA GGAGGCTGAA
+                 INS  .......... .....ACATG CCTGTAGTCC CAGCTCCTCA GGAGGCTGAA
+           Consensus  .......... .....ACATG CCTGTAGTCC CAGCTCCTCA GGAGGCTGAA
+
+                      51                                                 100
+                 STR  GCAGGAGGAC TGCCTGACCT ATGCTGGGCA CAGTGGCACA TGCCTGTAGT
+                 INS  GCAGGAGGAC TGCCTGACCT ATGCTGGGCA CAGTGGC... ..........
+           Consensus  GCAGGAGGAC TGCCTGACCT ATGCTGGGCA CAGTGGC... ..........
+
+                      101                                          144
+                 STR  CCCAGCTCCT CAGGAGGCTG AAGCAGGAGG ACTGCCTGAC CTAT
+                 INS  .......... .......... .......... .......... ....
+           Consensus  .......... .......... .......... .......... ....
+

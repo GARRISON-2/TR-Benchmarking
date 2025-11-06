@@ -1,0 +1,2 @@
+LRsv call: /opt/local/tools/TRsv/scripts/TRsv_nonhifi_v1.1.pl -b /data/HG001.PAW79146.haplotagged.cram -r /ref/human_GRCh38_no_alt_analysis_set.fasta -x ont --build 38 -p HG001.PAW79146_trsv -n 8
+LRsv call: /opt/local/tools/TRsv/scripts/TRsv_nonhifi_v1.1.pl -b /data/HG001.PAW79146.haplotagged.cram -r /ref/human_GRCh38_no_alt_analysis_set.fasta -x ont --build 38 -p HG001.PAW79146_trsv -n 4

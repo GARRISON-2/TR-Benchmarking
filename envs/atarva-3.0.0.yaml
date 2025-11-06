@@ -1,0 +1,13 @@
+name: atarva-3.0.0
+channels:
+  - defaults
+dependencies:
+  - python>=3.9
+  - pysam>=0.22.1
+  - numpy>=1.26.4
+  - pyabpoa>=1.5.3
+  - scikit-learn>=1.4.1
+  - threadpoolctl>=3.3.0
+  - scipy>=1.12.0
+  - tqdm >=4.66.1
+  - bitarray>=3.0.0
