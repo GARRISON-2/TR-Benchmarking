@@ -1,45 +1,11 @@
-# Ignore everything at repo root
 /*
-
-# Include these directories and ALL their contents
 !/catalogs/
 !/catalogs/**
-
 !/envs/
 !/envs/**
-
-!/atarva/
-!/atarva/**
-
-!/longtr/
-!/longtr/**
-
-!/mosdepth/
-!/mosdepth/**
-
-!/straglr/
-!/straglr/**
-
-!/strdust/
-!/strdust/**
-
-!/strkit/
-!/strkit/**
-
-!/trgt/
-!/trgt/**
-
-!/trsv/
-!/trsv/**
-
-!/vamos/
-!/vamos/**
-
-# Include specific root-level files
 !/*.nf
 !/*.sh
 !/README.md
 !/LICENSE
 !/.gitignore
-# (optional)
-!/nextflow.config
+!/nextflow.config    # uncomment if you want it tracked
