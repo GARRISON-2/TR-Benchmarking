@@ -1,0 +1,12 @@
+name: medaka-2.1.1
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pyabpoa=1.5.1
+  - medaka=2.1.1
+  - h5py
+  - numpy
+  - pandas

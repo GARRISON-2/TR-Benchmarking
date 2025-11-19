@@ -1,0 +1,20 @@
+name: longtr-gcc14-run
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+channel_priority: strict
+dependencies:
+  # GCC 14 runtime libraries (no compilers)
+  - libgcc-ng=14.*
+  - libstdcxx-ng=14.*
+  - sysroot_linux-64>=2.17
+
+  # Usual runtime libs
+  - zlib
+  - bzip2
+  - xz
+  - libdeflate
+  - openssl=1.1
+  - curl
+  - htslib
