@@ -13,3 +13,4 @@
 !/nextflow.config
 !/scripts/
 !/scripts/**
+/scripts/seq_comparisons/__pycache__
