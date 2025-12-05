@@ -50,78 +50,92 @@ def mainloop(bed_file, file1, file2):
     open(os.path.join(DATA_DIR, file2) , 'r') as f2, \
     open(os.path.join(LOCAL_DATA, "reference-comp.tsv"), "w") as rof, \
     open(os.path.join(LOCAL_DATA, "vcf-comp.tsv"), "w") as vof:
+        #---File Prep---
         # CURRENTLY REPRESENTS FILE STACK
         file_stack = [bed_file, f1, f2] 
 
-        # Write metadata to output file
+        # create list of reader objects that 
+        # help to keep the individual file information together
+        file_list = [BEDReader(bf)]
+        for i, file in enumerate(file_stack[1:]):
+                file_list.append(VCFReader(file))
 
+
+        # move past header information in vcf files
+        for i, fi_info in enumerate(file_list[1:]):
+            fi_info.skipMetaData()
+
+        # Write metadata to output file
 
         # set column headers for output tsv files
         rof.write("#FILE\tBEDPOS\tVCFPOS\tDIST\n")
         vof.write(f"#BEDPOS\tTOTDIST\tfile1\tfile2\n")
 
-        # make list of open file objects for easier management
-        file_list = [BEDReader(bf)]
-        for i, file in enumerate(file_stack[1:]):
-                file_list.append(VCFReader(file))
-
+        # set specific bed file variable for readability
         bed = file_list[0]
 
-        # move past header information
-        for i, fi_info in enumerate(file_list[1:]):
-            fi_info.skipMetaData()
 
 
+        # make list to easily keep track of which files have reached their ends
         f_states = [obj.end_state for obj in file_list]
 
+        #---Main Operations loop---
         # loop until all files have reached their final line
         #while not all(f_states):
+        # loop until the bed file has reached its end
         while not bed.end_state:
-        #for j in range(10):
             rof_out_str = ""
             vof_out_str = ""
             gt_list = []
-    
+            vcf_comp = True
+
+            # cycle through the bed and vcf files and perform operations on the current line
             for i, fi_info in enumerate(file_list):   
-                last_cycle = ( i == len(file_list) -1 ) 
+                last_cycle = ( i == len(file_list) -1 )
+                
 
                 # position alignment check
                 # if i == 0:
                 #     out_str += (f"BED Ref ({fi_info.pos_info}): {cur_line[3]}\n")
 
 
-                # if not the bed file
+                # run vcf specific operations 
                 if type(fi_info) != BEDReader:                   
                     # print(f"File[{i}]{fi_info.pos_info[1]}:{file_list[0].pos_info[1]} - {fi_info.pos_info[1] > file_list[0].pos_info[1]}") # DEBUGGING - REMOVE FOR LAUNCH
                     
-                    # run vcf specific operations
-
                     # if current file position is ahead of bed position range, then pause operations
                     if ((fi_info.pos_info["start"] > bed.pos_info["end"]) & \
-                            (fi_info.pos_info["chrom"] == bed.pos_info["chrom"]) ):    
+                            (fi_info.pos_info["chrom"] == bed.pos_info["chrom"]) | \
+                                fi_info.end_state):    
 
                         fi_info.pause = True
+                        vcf_comp = False
 
                     else:
                         fi_info.pause = False
 
+                        #---BED Ref Comparison Operations---
                         # compare current vcf ref with bed ref
                         #diff_dict = compareString(bed, fi_info)
                         bed_dist = lv.distance(bed.ref, fi_info.ref)
 
+                        #---VCF Comparison Operations---
                         # at least 2 of the vcf files have not hit their end, 
                         # then proceed with VCF-only operations
-                        if (sum(f_states[1:]) > 2):
+                        bool = (not sum(f_states[1:]) > 2) & vcf_comp # FIX BEFORE LAUNCH
+                        if bool:
+
                             # check indices to make sure they are ints (eg. accounting for 1|., etc.)
                             gt_idx = (checkIdx(fi_info.cur_line[-2][0]), checkIdx(fi_info.cur_line[-2][2]))
                             alleles = [fi_info.ref, *fi_info.alt]
+
                             # build genotype based on gt_idx indices
                             gt = [alleles[gt_idx[0]], alleles[gt_idx[1]]]
 
                             # add to list of genotypes for comparison between VCFs
                             gt_list.append(gt)                     
 
-                            # if it is the last cycle and 
+                            # if it is the last cycle
                             if last_cycle:
                                 vert_order = lv.distance(gt_list[0][0], gt_list[1][0]) + lv.distance(gt_list[0][1], gt_list[1][1])
 
@@ -146,7 +160,8 @@ def mainloop(bed_file, file1, file2):
 
                         rof_out_str += (f"{fi_info.name}\t{list(bed.pos_info.values())}\t{list(fi_info.pos_info.values())}\t{bed_dist}\n")
                 
-
+                    # wait to move the bed file to the next line until 
+                    # all other files have been gone through
                     if last_cycle:
                         bed.nextLine()
 
@@ -160,7 +175,7 @@ def mainloop(bed_file, file1, file2):
             vof.write(vof_out_str)
 
 
-        print("PROGRAM COMPLETE")
+        print("\n---PROGRAM COMPLETE---\n")
 
 
 

@@ -4,6 +4,7 @@ class VCFReader:
     def __init__(self, file = None):
         self.file_obj = file
         self.name = self.setName()
+        self.fields = None
         self.pause = False
         self.end_state = False   
         self.parsed_header = False
@@ -26,11 +27,8 @@ class VCFReader:
         # loop while the current line contains meta data
         while self.line_string.startswith("##"):
             self.nextLine()
-
-        if self.line_string.startswith("#"):
+        if self.line_string.startswith("#CHROM"):
             self.fields = self.setHeaderInfo(self.line_string)      
-        else:
-            self.fields = None
 
         self.parsed_header = True
         self.nextLine()
