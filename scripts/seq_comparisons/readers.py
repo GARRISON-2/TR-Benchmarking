@@ -1,45 +1,22 @@
 
 
 class VCFReader:
-    def __init__(self, file = None):
-        self.file_obj = file
-        self.name = self.setName()
-        self.fields = None
+    def __init__(self, file):
+        self.file_obj = file 
+        self.name = self._setName()
         self.pause = False
-        self.end_state = False   
-        self.parsed_header = False
-        self.line_string = None
-        self.cur_line = None
-        self.nextLine()        
+        self.end_state = False # bool for whether or not the end of the file has been reacher
+        self.cur_line = None # formatted list version of the current line read from the file
+        self.nextLine() # move to the first line in the file
+        self.fields = self._parseForFields() # set the field information to keep track of the columns in the file
+       
 
-
-    def setHeaderInfo(self, header_ls):
-        line_list = header_ls.strip().split("\t")
-
-        col_dict = {}
-        for i, col in enumerate(line_list):
-            col_dict[f"{col}"] = i
-        
-        return col_dict
-
-
-    def skipMetaData(self):
-        # loop while the current line contains meta data
-        while self.line_string.startswith("##"):
-            self.nextLine()
-        if self.line_string.startswith("#CHROM"):
-            self.fields = self.setHeaderInfo(self.line_string)      
-
-        self.parsed_header = True
-        self.nextLine()
-
-
-    def formatLine(self, ls, head_bool):
-        # split line string into list
+    def _formatLine(self, ls):
+        # split line string into list of strings
         line_list = ls.strip().split("\t")
 
-        # if the file not reading the header/metadata
-        if head_bool:
+        # if the file is not reading the header/metadata
+        if not line_list[0].startswith("#"):
             # calculate the end position and add it to the end of the line list
             pos = int(line_list[1])
             ref_len = len(line_list[3])
@@ -58,19 +35,58 @@ class VCFReader:
  
 
     def nextLine(self):
-        # try to moce to the next file as long is it is not already
+        # try to move to the next file as long is it is not already
         # at the end and it paused
         if (not self.end_state) & (not self.pause):
-            try:
-                self.line_string = next(self.file_obj)
-                self.cur_line = self.formatLine(self.line_string, self.parsed_header)
-            # catch exception that signals end of file
-            except StopIteration:
+            line_string = self.file_obj.readline()
+
+            # if the line is not empty (ie. the end of the file has been reached) 
+            # then format and set the current line parameter
+            if line_string:
+                self.cur_line = self._formatLine(line_string)
+            else: 
                 self.end_state = True
                 self.cur_line = None
 
+ 
+    def skipMetaData(self): 
+        # the header end position is already saved, 
+        # so skip to that position in the file then advance to the 1st line of data
+        self._setFilePosition(self.header_end)
+        
 
-    def setName(self):
+    def _setFilePosition(self, file_pos):
+        self.file_obj.seek(file_pos)
+        self.nextLine()
+
+
+    def _parseForFields(self):
+        
+        # loop while the current line contains meta data
+        while self.cur_line[0].startswith("#"):
+            if self.cur_line[0].startswith("#CHROM"):
+                # save the file position of the end of the header/metadata
+                self.header_end = self.file_obj.tell()
+                field_info = self._setFieldInfo(self.cur_line)  
+                self._setFilePosition(0) # return to the top of the file
+                return field_info
+
+            self.nextLine()  
+
+        # if the header information is not found, raise an error 
+        raise ValueError("VCF Header Information Not Found")
+        
+             
+    def _setFieldInfo(self, head_list):
+        # loop over the header and make dictionary of the column names and their indices
+        col_dict = {}
+        for i, col in enumerate(head_list):
+            col_dict[f"{col}"] = i
+        
+        return col_dict
+
+
+    def _setName(self):
         path_str = self.file_obj.name
         # enumerate through the reversed file path to grab
         # the index of where the file name starts
@@ -87,7 +103,7 @@ class VCFReader:
 class BEDReader:
     def __init__(self, file):
         self.file_obj = file
-        self.name = self.setName()
+        self.name = self._setName()
         self.end_state = False
         self.line_string = None   
         self.cur_line = None
@@ -98,14 +114,14 @@ class BEDReader:
         if (not self.end_state):
             try:
                 self.line_string = next(self.file_obj)
-                self.cur_line = self.formatLine(self.line_string)
+                self.cur_line = self._formatLine(self.line_string)
             # catch exception that signals end of file
             except StopIteration:
                 self.end_state = True
                 self.cur_line = None
 
 
-    def formatLine(self, ls):
+    def _formatLine(self, ls):
         # split line string into list
         line_list = ls.strip().split("\t")
 
@@ -125,7 +141,7 @@ class BEDReader:
         return line_list
 
 
-    def setName(self):
+    def _setName(self):
         path_str = self.file_obj.name
         # enumerate through the reversed file path to grab
         # the index of where the file name starts

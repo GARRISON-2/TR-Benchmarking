@@ -44,6 +44,7 @@ def mainloop(bed_file, file1, file2):
     # print("Enter 1st VCF path:")
     # print("Enter 2nd VCF path")
 
+ 
     # open all input and output files
     with open(os.path.join(DATA_DIR, bed_file) , 'r') as bf, \
     open(os.path.join(DATA_DIR, file1) , 'r') as f1, \
@@ -56,28 +57,27 @@ def mainloop(bed_file, file1, file2):
 
         # create list of reader objects that 
         # help to keep the individual file information together
-        file_list = [BEDReader(bf)]
+        reader_list = [BEDReader(bf)]
         for i, file in enumerate(file_stack[1:]):
-                file_list.append(VCFReader(file))
-
+                reader_list.append(VCFReader(file))
 
         # move past header information in vcf files
-        for i, fi_info in enumerate(file_list[1:]):
-            fi_info.skipMetaData()
+        for i, rdr in enumerate(reader_list[1:]):
+            rdr.skipMetaData()
 
         # Write metadata to output file
+
 
         # set column headers for output tsv files
         rof.write("#FILE\tBEDPOS\tVCFPOS\tDIST\n")
         vof.write(f"#BEDPOS\tTOTDIST\tfile1\tfile2\n")
 
         # set specific bed file variable for readability
-        bed = file_list[0]
+        bed = reader_list[0]
 
+        # make bool list to easily keep track of which files have reached their ends
+        f_states = [obj.end_state for obj in reader_list]
 
-
-        # make list to easily keep track of which files have reached their ends
-        f_states = [obj.end_state for obj in file_list]
 
         #---Main Operations loop---
         # loop until all files have reached their final line
@@ -90,44 +90,39 @@ def mainloop(bed_file, file1, file2):
             vcf_comp = True
 
             # cycle through the bed and vcf files and perform operations on the current line
-            for i, fi_info in enumerate(file_list):   
-                last_cycle = ( i == len(file_list) -1 )
+            for i, reader in enumerate(reader_list):   
+                last_cycle = ( i == len(reader_list) -1 )
                 
-
-                # position alignment check
-                # if i == 0:
-                #     out_str += (f"BED Ref ({fi_info.pos_info}): {cur_line[3]}\n")
-
-
                 # run vcf specific operations 
-                if type(fi_info) != BEDReader:                   
-                    # print(f"File[{i}]{fi_info.pos_info[1]}:{file_list[0].pos_info[1]} - {fi_info.pos_info[1] > file_list[0].pos_info[1]}") # DEBUGGING - REMOVE FOR LAUNCH
+                if type(reader) != BEDReader:                   
+                    # print(f"File[{i}]{reader.pos_info[1]}:{reader_list[0].pos_info[1]} - {reader.pos_info[1] > reader_list[0].pos_info[1]}") # DEBUGGING - REMOVE FOR LAUNCH
                     
                     # if current file position is ahead of bed position range, then pause operations
-                    if ((fi_info.pos_info["start"] > bed.pos_info["end"]) & \
-                            (fi_info.pos_info["chrom"] == bed.pos_info["chrom"]) | \
-                                fi_info.end_state):    
+                    if ((reader.pos_info["start"] > bed.pos_info["end"]) & \
+                            (reader.pos_info["chrom"] == bed.pos_info["chrom"]) | \
+                                reader.end_state):    
 
-                        fi_info.pause = True
+                        reader.pause = True
                         vcf_comp = False
 
                     else:
-                        fi_info.pause = False
+                        reader.pause = False
+
 
                         #---BED Ref Comparison Operations---
                         # compare current vcf ref with bed ref
-                        #diff_dict = compareString(bed, fi_info)
-                        bed_dist = lv.distance(bed.ref, fi_info.ref)
+                        #diff_dict = compareString(bed, reader)
+                        bed_dist = lv.distance(bed.ref, reader.ref)
+
 
                         #---VCF Comparison Operations---
                         # at least 2 of the vcf files have not hit their end, 
                         # then proceed with VCF-only operations
-                        bool = (not sum(f_states[1:]) > 2) & vcf_comp # FIX BEFORE LAUNCH
-                        if bool:
+                        if (not sum(f_states[1:]) > 2) & vcf_comp: # FIX FOR READABILITY BEFORE LAUNCH
 
                             # check indices to make sure they are ints (eg. accounting for 1|., etc.)
-                            gt_idx = (checkIdx(fi_info.cur_line[-2][0]), checkIdx(fi_info.cur_line[-2][2]))
-                            alleles = [fi_info.ref, *fi_info.alt]
+                            gt_idx = (checkIdx(reader.cur_line[-2][0]), checkIdx(reader.cur_line[-2][2]))
+                            alleles = [reader.ref, *reader.alt]
 
                             # build genotype based on gt_idx indices
                             gt = [alleles[gt_idx[0]], alleles[gt_idx[1]]]
@@ -158,7 +153,7 @@ def mainloop(bed_file, file1, file2):
 
                             
 
-                        rof_out_str += (f"{fi_info.name}\t{list(bed.pos_info.values())}\t{list(fi_info.pos_info.values())}\t{bed_dist}\n")
+                        rof_out_str += (f"{reader.name}\t{list(bed.pos_info.values())}\t{list(reader.pos_info.values())}\t{bed_dist}\n")
                 
                     # wait to move the bed file to the next line until 
                     # all other files have been gone through
@@ -167,8 +162,8 @@ def mainloop(bed_file, file1, file2):
 
                 # move to next line in file
                 # reader object automatically formats the line and sets it to cur_line parameter
-                if not type(fi_info) == BEDReader:
-                    fi_info.nextLine()
+                if not type(reader) == BEDReader:
+                    reader.nextLine()
 
             # output results from single cycle through the files
             rof.write(rof_out_str)
@@ -176,6 +171,7 @@ def mainloop(bed_file, file1, file2):
 
 
         print("\n---PROGRAM COMPLETE---\n")
+
 
 
 
