@@ -1,13 +1,14 @@
 
 
 class VCFReader:
-    def __init__(self, file):
+    def __init__(self, file, offset = 0):
         self.file_obj = file 
         self.name = self._setName()
+        self.offset = offset
         self.pause = False
         self.end_state = False # bool for whether or not the end of the file has been reacher
         self.cur_line = None # formatted list version of the current line read from the file
-        self.nextLine() # move to the first line in the file
+        self.read() # move to the first line in the file
         self.fields = self._parseForFields() # set the field information to keep track of the columns in the file
        
 
@@ -26,23 +27,23 @@ class VCFReader:
             # set specific data to their own parameters for better accessibility
             self.pos_info = {          # eg:
                 "chrom": line_list[0],   # CHROM1 
-                "start": pos,            # 10002
-                "end": end_pos}          # 10222
+                "start": pos - self.offset,            # 10002
+                "end": end_pos - self.offset}          # 10222
             self.ref = line_list[self.fields["REF"]] # the refence sequence as a string            
             self.alt = line_list[self.fields["ALT"]].split(",") # returns a list of all alt alleles
 
         return line_list 
  
 
-    def nextLine(self):
+    def read(self):
         # try to move to the next file as long is it is not already
         # at the end and it paused
         if (not self.end_state) & (not self.pause):
             line_string = self.file_obj.readline()
 
             # if the line is not empty (ie. the end of the file has been reached) 
-            # then format and set the current line parameter
             if line_string:
+                # then format and set the current line
                 self.cur_line = self._formatLine(line_string)
             else: 
                 self.end_state = True
@@ -57,7 +58,7 @@ class VCFReader:
 
     def _setFilePosition(self, file_pos):
         self.file_obj.seek(file_pos)
-        self.nextLine()
+        self.read()
 
 
     def _parseForFields(self):
@@ -71,7 +72,7 @@ class VCFReader:
                 self._setFilePosition(0) # return to the top of the file
                 return field_info
 
-            self.nextLine()  
+            self.read()  
 
         # if the header information is not found, raise an error 
         raise ValueError("VCF Header Information Not Found")
@@ -107,10 +108,10 @@ class BEDReader:
         self.end_state = False
         self.line_string = None   
         self.cur_line = None
-        self.nextLine()
+        self.read()
 
 
-    def nextLine(self):
+    def read(self):
         if (not self.end_state):
             try:
                 self.line_string = next(self.file_obj)
