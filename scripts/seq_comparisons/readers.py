@@ -1,16 +1,36 @@
 
 
 class VCFReader:
-    def __init__(self, file, offset = 0):
+    def __init__(self, file, start_offset = -1, end_offset = 0):
         self.file_obj = file 
         self.name = self._setName()
-        self.offset = offset
+        self.start_off = start_offset
+        self.end_off = end_offset
         self.pause = False
         self.end_state = False # bool for whether or not the end of the file has been reacher
-        self.cur_line = None # formatted list version of the current line read from the file
+        self.cur_line = None # formatted list version of the last line read from the file
         self.read() # move to the first line in the file
         self.fields = self._parseForFields() # set the field information to keep track of the columns in the file
        
+    def buildGt(self):
+
+        # check indices to make sure they are ints (eg. accounting for 1|., etc.)
+        gt_idx = (self._checkIdx(self.cur_line[-2][0]), self._checkIdx(self.cur_line[-2][2]))
+        alleles = [self.ref, *self.alt]
+
+        # build genotype based on gt_idx indices
+        gt = [alleles[gt_idx[0]], alleles[gt_idx[1]]]
+
+        # add to list of genotypes for comparison between VCFs
+        self.genotype = gt  
+
+
+    def _checkIdx(self, idx):
+        try:
+            return int(idx)
+        except ValueError:
+            return 0
+
 
     def _formatLine(self, ls):
         # split line string into list of strings
@@ -25,10 +45,10 @@ class VCFReader:
             line_list.append(end_pos)
 
             # set specific data to their own parameters for better accessibility
-            self.pos_info = {          # eg:
-                "chrom": line_list[0],   # CHROM1 
-                "start": pos - self.offset,            # 10002
-                "end": end_pos - self.offset}          # 10222
+            self.pos_info = {                       # eg:
+                "chrom": line_list[0],              # CHROM1 
+                "start": pos + self.start_off,      # 10002
+                "end": end_pos + self.end_off}      # 10222
             self.ref = line_list[self.fields["REF"]] # the refence sequence as a string            
             self.alt = line_list[self.fields["ALT"]].split(",") # returns a list of all alt alleles
 
@@ -128,8 +148,7 @@ class BEDReader:
 
         # calculate the end position and add it to the end of the row list
         pos = int(line_list[1])
-        ref_len = len(line_list[3])
-        end_pos = pos + ref_len - 1
+        end_pos = int(line_list[2])
         line_list.append(end_pos)
 
         # set position information parameter for easier access

@@ -31,11 +31,34 @@ def compareString(line1, line2):
     return return_dict 
 
 
-def checkIdx(idx):
-    try:
-        return int(idx)
-    except ValueError:
-        return 0
+
+def compareGt(gt1, gt2):
+    
+    # get distances for both permutations of comparing alleles
+    vert_dist = lv.distance(gt1[0], gt2[0]) + lv.distance(gt1[1], gt2[1])
+    cross_dist = lv.distance(gt1[1], gt2[0]) + lv.distance(gt1[0], gt2[1])
+
+    gt_dist = vert_dist
+
+    # if the allele order is mismatched between the genotypes
+    if vert_dist > cross_dist:
+        # swap the order of the alleles in the second gt to ensure 
+        # they can be compared properly
+        #gt_list[1][0], gt_list[1][1] = gt_list[1][1], gt_list[1][0]
+
+        # use the cross distance since it is less,
+        # which means it is more likely to be the correct comparison ordering
+        gt_dist = cross_dist
+
+    return gt_dist
+
+
+def stateCheck(rl):
+    end_states = [obj.end_state for obj in rl]
+    pse_states = [obj.pause for obj in rl]
+
+    return ((len(end_states) - sum(end_states)) >= 2) & ((len(pse_states) - sum(pse_states)) >= 2)
+
 
 
 
@@ -49,129 +72,105 @@ def mainloop(bed_file, file1, file2):
     with open(os.path.join(DATA_DIR, bed_file) , 'r') as bf, \
     open(os.path.join(DATA_DIR, file1) , 'r') as f1, \
     open(os.path.join(DATA_DIR, file2) , 'r') as f2, \
-    open(os.path.join(LOCAL_DATA, "reference-comp.tsv"), "w") as bof, \
+    open(os.path.join(LOCAL_DATA, "bed-comp.tsv"), "w") as bof, \
     open(os.path.join(LOCAL_DATA, "vcf-comp.tsv"), "w") as vof:
         # File Prep
-        file_stack = [bed_file, f1, f2]         # CURRENTLY REPRESENTS INPUT FILE STACK
+        file_stack = [f1, f2, bf]         # CURRENTLY REPRESENTS INPUT FILE STACK
 
         # create list of reader objects to keep track of individual file info
-        reader_list = [BEDReader(bf)]
-        for i, file in enumerate(file_stack[1:]):
-                reader_list.append(VCFReader(file))
-
-        bed = reader_list[0]
+        vcf_rdrs = []
+        offsets = [[-1, 0], [-1, 0]]
+        for i in range(len(file_stack)):
+            if file_stack[i].name.endswith("vcf"):
+                vcf_rdrs.append(VCFReader(file_stack[i], 
+                                        start_offset=offsets[i][0], 
+                                        end_offset=offsets[i][1]))
+            elif file_stack[i].name.endswith("bed"):
+                bed = BEDReader(file_stack[i])
+        
 
         # move past header data in vcf files
-        for i, rdr in enumerate(reader_list[1:]):
-            rdr.skipMetaData()
+        for i, rdr in enumerate(vcf_rdrs):
+            if type(rdr) != BEDReader:
+                rdr.skipMetaData()
 
         # Write metadata to output file
 
 
         # set column headers for output tsv files
         bof.write("#FILE\tBEDPOS\tVCFPOS\tDIST\n")
-        vof.write(f"#BEDPOS\tTOTDIST\tfile1\tfile2\n")
-
-
-        # make list to keep track of which files have reached their ends
-        f_states = [obj.end_state for obj in reader_list]
+        vof.write(f"#CHROM\tSTART\tEND\tPOSDIST\tGTDIST\tfile1\tfile2\n")
 
 
         # Main Operations loop
-        # loop until all files have reached their final line
-        #while not all(f_states):
-
         # loop until the bed file has reached its end
         while not bed.end_state:
+        #while not all(end_states): or loop till all files are done
             bof_out_str = ""
             vof_out_str = ""
             gt_list = []
             compare_vcf = True # boolean value to disable/enable running the vcf comparisons as needed
 
-            # cycle through the bed and vcf files and perform operations on the current line
-            for i, reader in enumerate(reader_list):   
-                end_of_cycle = ( i == len(reader_list) -1 ) 
 
-                # bed alignment checks
-                #if type(reader) != BEDReader:
+            # bed alignment checks
+            #if type(reader) != BEDReader:
 
 
 
+            # cycle through the vcf files and perform operations on the current line
+            for i, reader in enumerate(vcf_rdrs): 
+                last_file = ( i == len(vcf_rdrs) -1 )
+           
+                # if current file position is ahead of bed position range, then pause operations
+                if ((reader.pos_info["start"] > bed.pos_info["end"]) & (reader.pos_info["chrom"] == bed.pos_info["chrom"])) | \
+                        reader.end_state:    
 
-                # run vcf specific operations 
-                if type(reader) != BEDReader:                   
-                    # print(f"File[{i}]{reader.pos_info[1]}:{reader_list[0].pos_info[1]} - {reader.pos_info[1] > reader_list[0].pos_info[1]}") # DEBUGGING - REMOVE FOR LAUNCH
-                    
-                    # if current file position is ahead of bed position range, then pause operations
-                    if ((reader.pos_info["start"] > bed.pos_info["end"]) & (reader.pos_info["chrom"] == bed.pos_info["chrom"])) | \
-                            reader.end_state:    
+                    reader.pause = True # pause current vcf from moving to the next line
 
-                        reader.pause = True # pause current vcf from moving to the next line
-                        compare_vcf = False # pause vcf comparisons for the rest of the cycle
+                else:
+                    reader.pause = False
 
-                    else:
-                        reader.pause = False
+                    # BED Ref Comparison Operations
+                    # compare current vcf ref with bed ref
+                    start_diff = abs(reader.pos_info["start"] - bed.pos_info["start"])
+                    end_diff = abs(reader.pos_info["end"] - bed.pos_info["end"])
 
-                        # BED Ref Comparison Operations
-                        # compare current vcf ref with bed ref
-                        bed_dist = lv.distance(bed.ref, reader.ref)
+                    bed_dist = start_diff + end_diff
 
+                    end_num = sum([obj.end_state for obj in vcf_rdrs]) # number of files that have ended
+                    pse_num = sum([obj.pause for obj in vcf_rdrs]) # number of files that are paused
 
-                        # VCF Comparison Operations
-                        # if at least 2 of the vcf files have not hit their end, 
-                        # then proceed with VCF comparisons
-                        if (not sum(f_states[1:]) > 2) & compare_vcf: # FIX FOR READABILITY BEFORE LAUNCH
-
-                            # check indices to make sure they are ints (eg. accounting for 1|., etc.)
-                            gt_idx = (checkIdx(reader.cur_line[-2][0]), checkIdx(reader.cur_line[-2][2]))
-                            alleles = [reader.ref, *reader.alt]
-
-                            # build genotype based on gt_idx indices
-                            gt = [alleles[gt_idx[0]], alleles[gt_idx[1]]]
-
-                            # add to list of genotypes for comparison between VCFs
-                            gt_list.append(gt)                     
-
-                            if end_of_cycle:
-
-                                # get distances for both permutations of comparing alleles
-                                vert_dist = lv.distance(gt_list[0][0], gt_list[1][0]) + lv.distance(gt_list[0][1], gt_list[1][1])
-                                cross_dist = lv.distance(gt_list[0][1], gt_list[1][0]) + lv.distance(gt_list[0][0], gt_list[1][1])
-
-                                gt_dist = vert_dist
-
-                                # if the allele order is mismatched between the genotypes
-                                if vert_dist > cross_dist:
-                                    # swap the order of the alleles in the second gt to ensure 
-                                    # they can be compared properly
-                                    #gt_list[1][0], gt_list[1][1] = gt_list[1][1], gt_list[1][0]
-
-                                    # use the cross distance since it is less,
-                                    # which means it is more likely to be the correct comparison ordering
-                                    gt_dist = cross_dist
+                    bof_out_str += (f"{reader.name}\t{list(bed.pos_info.values())}\t{list(reader.pos_info.values())}\t{bed_dist}\n")
 
 
-                                vof_out_str = f"{list(bed.pos_info.values())}\t{gt_dist}\t{gt_list[0]}\t{gt_list[1]}\n"
-                         
+                    # Build Current Genotype
+                    reader.buildGt()
 
-                        bof_out_str += (f"{reader.name}\t{list(bed.pos_info.values())}\t{list(reader.pos_info.values())}\t{bed_dist}\n")
-                
-        
-                # read in and set the new current line
-                if not type(reader) == BEDReader:
-                    reader.read()
 
-            # wait to move the bed file's current line until
-            # all other files have been gone through
+                if stateCheck(vcf_rdrs) & last_file:
+
+                    # compare 2 genotypes
+                    gt_dist = compareGt(vcf_rdrs[0].genotype, vcf_rdrs[1].genotype)
+
+                    vcf_start_diff = abs(vcf_rdrs[0].pos_info["start"] - vcf_rdrs[1].pos_info["start"])
+                    vcf_end_diff = abs(vcf_rdrs[0].pos_info["end"] - vcf_rdrs[1].pos_info["end"])
+
+                    pos_dist = vcf_start_diff + vcf_end_diff 
+
+                    vof_out_str = f"{bed.pos_info["chrom"]}\t{bed.pos_info["start"]}\t{bed.pos_info["end"]}\t{pos_dist}\t{gt_dist}\t{vcf_rdrs[0].genotype}\t{vcf_rdrs[1].genotype}\n"    
+            
+
+            # read current lines for all files
+            [rdr.read() for rdr in vcf_rdrs]
             bed.read()
 
             bof.write(bof_out_str)
             vof.write(vof_out_str)
 
 
-        print("\n---PROGRAM COMPLETE---\n")
+    print("\n---PROGRAM COMPLETE---\n")
 
 
 
 
-mainloop("test-isolated-vc-catalog.strkit.bed", "HG001.strdust.vcf", "HG001.strkit.vcf")
+mainloop("test-isolated-vc-catalog.strkit.bed", "HG001.PAW79146.haplotagged.URfix.atarva.vcf", "HG001.PAW79146.haplotagged.URfix.strkit.vcf")
