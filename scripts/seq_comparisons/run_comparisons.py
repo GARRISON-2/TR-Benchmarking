@@ -61,75 +61,79 @@ def stateCheck(rl):
 
 
 
+def mainloop(bed_file, vcf_list):
 
-def mainloop(bed_file, file1, file2):
-    # print("Enter catalog path:")
-    # print("Enter 1st VCF path:")
-    # print("Enter 2nd VCF path")
+    vcf_rdrs = []
+    comps = 0
+    offsets = [[-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0]]
 
- 
-    # open all input and output files
-    with open(os.path.join(DATA_DIR, bed_file) , 'r') as bf, \
-    open(os.path.join(DATA_DIR, file1) , 'r') as f1, \
-    open(os.path.join(DATA_DIR, file2) , 'r') as f2, \
-    open(os.path.join(LOCAL_DATA, "bed-comp.tsv"), "w") as bof, \
-    open(os.path.join(LOCAL_DATA, "vcf-comp.tsv"), "w") as vof:
-        # File Prep
-        file_stack = [f1, f2, bf]         # CURRENTLY REPRESENTS INPUT FILE STACK
+    # File Prep
+    # create list of reader objects to keep track of individual file info
+    for i in range(len(vcf_list)):
+                # create VCFReader object for file. VCFReader automatically opens the file
+                vcf_rdrs.append(VCFReader(os.path.join(DATA_DIR, vcf_list[i]), 
+                                    start_offset=offsets[i][0], 
+                                    end_offset=offsets[i][1]))
+                
+                # move past header data in vcf files
+                vcf_rdrs[i].skipMetaData()
 
-        # create list of reader objects to keep track of individual file info
-        vcf_rdrs = []
-        offsets = [[-1, 0], [-1, 0]]
-        for i in range(len(file_stack)):
-            if file_stack[i].name.endswith("vcf"):
-                vcf_rdrs.append(VCFReader(file_stack[i], 
-                                        start_offset=offsets[i][0], 
-                                        end_offset=offsets[i][1]))
-            elif file_stack[i].name.endswith("bed"):
-                bed = BEDReader(file_stack[i])
-        
+    bed = BEDReader(os.path.join(DATA_DIR, bed_file))
+    
 
-        # move past header data in vcf files
-        for i, rdr in enumerate(vcf_rdrs):
-            if type(rdr) != BEDReader:
-                rdr.skipMetaData()
+    # print("Comparisons:\n1 (default): BED-VCF & VCF-VCF\n 2 : BED-VCF\n 3 : VCF-VCF")
+    # #while comps > 3 and comps < 1:
+    # comps = int(input(": "))
+    comps = 1
 
-        # Write metadata to output file
-
-
-        # set column headers for output tsv files
+    if comps == 1 or comps == 2:
+        bof = open(os.path.join(LOCAL_DATA, "bed-comp.tsv"), "w")
         bof.write("#FILE\tBEDPOS\tVCFPOS\tDIST\n")
-        vof.write(f"#CHROM\tSTART\tEND\tPOSDIST\tGTDIST\tfile1\tfile2\n")
+
+    if comps == 1 or comps == 3:
+        vof = open(os.path.join(LOCAL_DATA, "vcf-comp.tsv"), "w")
+        vof.write(f"#CHROM\tSTART\tEND\tPOSDIST\tGTDIST\tfile1\tfile2\tfile3\n")
 
 
-        # Main Operations loop
-        # loop until the bed file has reached its end
-        while not bed.end_state:
-        #while not all(end_states): or loop till all files are done
-            bof_out_str = ""
-            vof_out_str = ""
-            gt_list = []
-            compare_vcf = True # boolean value to disable/enable running the vcf comparisons as needed
-
-
-            # bed alignment checks
-            #if type(reader) != BEDReader:
+    # Write metadata to output file
 
 
 
-            # cycle through the vcf files and perform operations on the current line
-            for i, reader in enumerate(vcf_rdrs): 
-                last_file = ( i == len(vcf_rdrs) -1 )
-           
-                # if current file position is ahead of bed position range, then pause operations
-                if ((reader.pos_info["start"] > bed.pos_info["end"]) & (reader.pos_info["chrom"] == bed.pos_info["chrom"])) | \
-                        reader.end_state:    
+    # Main Operations loop
+    # loop until the bed file has reached its end
+    while not bed.end_state:
+    #while not all(end_states): or loop till all files are done
+        bof_out_str = ""
+        vof_out_str = ""
+        gt_dist_list = []
+        ps_dist_list = []
 
-                    reader.pause = True # pause current vcf from moving to the next line
 
+        # cycle through the vcf files and perform operations on the current line
+        for i, reader in enumerate(vcf_rdrs): 
+            last_file = ( i == len(vcf_rdrs) -1 )
+
+        
+            # if current file position is ahead of bed position range, then pause operations
+            if ((reader.pos_info["start"] > bed.pos_info["end"]) and (reader.pos_info["chrom"] == bed.pos_info["chrom"])) or \
+                    reader.end_state:    
+
+                reader.pause = True # pause current vcf from moving to the next line
+
+            else:
+                reader.pause = False
+
+                # check to see if the vcf has fallen behind the bed
+                while ((reader.pos_info["end"] < bed.pos_info["start"]) and (reader.pos_info["chrom"] == bed.pos_info["chrom"])):
+                    print(f"{reader.name} skipping {list(reader.pos_info.values())}")
+                    reader.read()
+
+            
+            if comps == 1 or comps == 2:
+
+                if reader.pause:
+                    bed_dist = None
                 else:
-                    reader.pause = False
-
                     # BED Ref Comparison Operations
                     # compare current vcf ref with bed ref
                     start_diff = abs(reader.pos_info["start"] - bed.pos_info["start"])
@@ -137,40 +141,58 @@ def mainloop(bed_file, file1, file2):
 
                     bed_dist = start_diff + end_diff
 
-                    end_num = sum([obj.end_state for obj in vcf_rdrs]) # number of files that have ended
-                    pse_num = sum([obj.pause for obj in vcf_rdrs]) # number of files that are paused
+                bof_out_str = (f"{reader.name}\t{list(bed.pos_info.values())}\t{list(reader.pos_info.values())}\t{bed_dist}\n")
+                bof.write(bof_out_str)
 
-                    bof_out_str += (f"{reader.name}\t{list(bed.pos_info.values())}\t{list(reader.pos_info.values())}\t{bed_dist}\n")
-
-
-                    # Build Current Genotype
-                    reader.buildGt()
-
-
-                if stateCheck(vcf_rdrs) & last_file:
-
+            if stateCheck(vcf_rdrs) and (comps == 1 or comps == 3): # and last_file
+                gtd_sub = []
+                psd_sub = []
+                for other_reader in vcf_rdrs[i+1:]:
                     # compare 2 genotypes
-                    gt_dist = compareGt(vcf_rdrs[0].genotype, vcf_rdrs[1].genotype)
+                    gtd = compareGt(reader.genotype, other_reader.genotype)
+                    gtd_sub.append(gtd)
 
-                    vcf_start_diff = abs(vcf_rdrs[0].pos_info["start"] - vcf_rdrs[1].pos_info["start"])
-                    vcf_end_diff = abs(vcf_rdrs[0].pos_info["end"] - vcf_rdrs[1].pos_info["end"])
+                    # calculate difference in positions between vcf files
+                    vcf_start_diff = abs(reader.pos_info["start"] - other_reader.pos_info["start"])
+                    vcf_end_diff = abs(reader.pos_info["end"] - other_reader.pos_info["end"])
+                    psd_sub.append(vcf_start_diff + vcf_end_diff)
 
-                    pos_dist = vcf_start_diff + vcf_end_diff 
+                gt_dist_list.append(gtd_sub)  
+                ps_dist_list.append(psd_sub)
 
-                    vof_out_str = f"{bed.pos_info["chrom"]}\t{bed.pos_info["start"]}\t{bed.pos_info["end"]}\t{pos_dist}\t{gt_dist}\t{vcf_rdrs[0].genotype}\t{vcf_rdrs[1].genotype}\n"    
-            
+                
+       # vof_out_str = f"{bed.pos_info["chrom"]}\t{bed.pos_info["start"]}\t{bed.pos_info["end"]}\t{psd_sub}\t{gt_dist_list}\t{reader.genotype}\t{other_reader.genotype}\n"                  
+        vof_out_str = f"{bed.pos_info["chrom"]}\t{bed.pos_info["start"]}\t{bed.pos_info["end"]}\t{psd_sub}\t{gt_dist_list}\n"                  
+        vof.write(vof_out_str)
 
-            # read current lines for all files
-            [rdr.read() for rdr in vcf_rdrs]
-            bed.read()
+        # read current lines for all files
+        [rdr.read() for rdr in vcf_rdrs] 
+        [rdr.buildGt() for rdr in vcf_rdrs]         
+        bed.read()
 
-            bof.write(bof_out_str)
-            vof.write(vof_out_str)
-
-
-    print("\n---PROGRAM COMPLETE---\n")
-
-
+           
 
 
-mainloop("test-isolated-vc-catalog.strkit.bed", "HG001.PAW79146.haplotagged.URfix.atarva.vcf", "HG001.PAW79146.haplotagged.URfix.strkit.vcf")
+    # close all files
+    bed.close_file()
+    for rdr in vcf_rdrs:
+        rdr.close_file()
+    if comps == 1 or comps == 2:
+        bof.close() 
+    if comps == 1 or comps == 3:
+        vof.close() 
+
+
+    print("\n\n---PROGRAM COMPLETE---\n")
+
+
+
+mainloop("test-isolated-vc-catalog.atarva.bed",
+         ["HG001.PAW79146.haplotagged.URfix.atarva.vcf", 
+         "HG001.strdust.vcf",
+         "HG001.PAW79146.haplotagged.URfix.strkit.vcf",
+         #"HG001.PAW79146.haplotagged.URfix.longTR.vcf",
+         #"HG001.PAW79146.haplotagged.URfix.vcf",
+         #"HG001.PAW79146.haplotagged.URfix.vamos.vcf",
+         #"medaka_to_ref.TR.vcf"
+         ])

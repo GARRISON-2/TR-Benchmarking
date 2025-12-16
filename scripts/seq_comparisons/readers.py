@@ -1,9 +1,9 @@
-
+import sys
 
 class VCFReader:
-    def __init__(self, file, start_offset = -1, end_offset = 0):
-        self.file_obj = file 
-        self.name = self._setName()
+    def __init__(self, file_path, start_offset = -1, end_offset = 0):
+        self.file_obj = self.open_file(file_path, "r")
+        self.name = self._setName(file_path)
         self.start_off = start_offset
         self.end_off = end_offset
         self.pause = False
@@ -11,8 +11,14 @@ class VCFReader:
         self.cur_line = None # formatted list version of the last line read from the file
         self.read() # move to the first line in the file
         self.fields = self._parseForFields() # set the field information to keep track of the columns in the file
-       
-    def buildGt(self):
+
+
+    def close_file(self):
+        if not self.file_obj.closed:
+            self.file_obj.close()
+
+
+    def buildGt(self, ):
 
         # check indices to make sure they are ints (eg. accounting for 1|., etc.)
         gt_idx = (self._checkIdx(self.cur_line[-2][0]), self._checkIdx(self.cur_line[-2][2]))
@@ -23,6 +29,13 @@ class VCFReader:
 
         # add to list of genotypes for comparison between VCFs
         self.genotype = gt  
+
+
+    def open_file(self, fp, open_method):
+        try:
+            return open(fp, open_method)
+        except IOError as e:
+            sys.exit(f"Failed to open file: {e}")
 
 
     def _checkIdx(self, idx):
@@ -52,6 +65,7 @@ class VCFReader:
             self.ref = line_list[self.fields["REF"]] # the refence sequence as a string            
             self.alt = line_list[self.fields["ALT"]].split(",") # returns a list of all alt alleles
 
+
         return line_list 
  
 
@@ -68,6 +82,7 @@ class VCFReader:
             else: 
                 self.end_state = True
                 self.cur_line = None
+                self.close_file()
 
  
     def skipMetaData(self): 
@@ -107,8 +122,9 @@ class VCFReader:
         return col_dict
 
 
-    def _setName(self):
-        path_str = self.file_obj.name
+    def _setName(self, fp):
+        path_str = fp
+        name_start = 0
         # enumerate through the reversed file path to grab
         # the index of where the file name starts
         for i, letter in enumerate(reversed(path_str)):
@@ -122,13 +138,23 @@ class VCFReader:
 
 
 class BEDReader:
-    def __init__(self, file):
-        self.file_obj = file
-        self.name = self._setName()
+    def __init__(self, file_path):
+        self.file_obj = self.open_file(file_path, "r")
+        self.name = self._setName(file_path)
         self.end_state = False
         self.line_string = None   
         self.cur_line = None
         self.read()
+
+    def open_file(self, fp, open_method):
+        try:
+            return open(fp, open_method)
+        except IOError as e:
+            sys.exit(f"Failed to open file: {e}")
+
+    def close_file(self):
+        if not self.file_obj.closed:
+            self.file_obj.close()
 
 
     def read(self):
@@ -140,6 +166,7 @@ class BEDReader:
             except StopIteration:
                 self.end_state = True
                 self.cur_line = None
+                self.close_file()
 
 
     def _formatLine(self, ls):
@@ -161,8 +188,8 @@ class BEDReader:
         return line_list
 
 
-    def _setName(self):
-        path_str = self.file_obj.name
+    def _setName(self, fp):
+        path_str = fp
         # enumerate through the reversed file path to grab
         # the index of where the file name starts
         for i, letter in enumerate(reversed(path_str)):
