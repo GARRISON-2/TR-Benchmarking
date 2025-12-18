@@ -1,16 +1,16 @@
 import sys
+import gzip
 
 class VCFReader:
     def __init__(self, file_path, start_offset = -1, end_offset = 0):
-        self.file_obj = self.open_file(file_path, "r")
-        self.name = self._setName(file_path)
+        self.file_obj = None
+        self.path = file_path
         self.start_off = start_offset
         self.end_off = end_offset
         self.pause = False
-        self.end_state = False # bool for whether or not the end of the file has been reacher
-        self.cur_line = None # formatted list version of the last line read from the file
-        self.read() # move to the first line in the file
-        self.fields = self._parseForFields() # set the field information to keep track of the columns in the file
+        self.end_state = False # bool for whether or not the end of the file has been reached
+        self.prev_line = None
+        self.cur_line = None # formatted list version of the last line string read from the file
 
 
     def close_file(self):
@@ -18,67 +18,46 @@ class VCFReader:
             self.file_obj.close()
 
 
-    def buildGt(self, ):
-
+    def buildGt(self):
+    
         # check indices to make sure they are ints (eg. accounting for 1|., etc.)
-        gt_idx = (self._checkIdx(self.cur_line[-2][0]), self._checkIdx(self.cur_line[-2][2]))
-        alleles = [self.ref, *self.alt]
+        gt_idx = (self._checkIdx(self.cur_line[-1][0]), self._checkIdx(self.cur_line[-1][2]))
+        alleles = [self.ref, *self.alt, None]
 
         # build genotype based on gt_idx indices
         gt = [alleles[gt_idx[0]], alleles[gt_idx[1]]]
+  
+        self.genotype = gt
 
         # add to list of genotypes for comparison between VCFs
-        self.genotype = gt  
+        return gt  
 
 
-    def open_file(self, fp, open_method):
+    def open_file(self):
+        if self.path.endswith(".gz"):
+            self.file_obj = gzip.open(self.path, "rt", encoding="utf-8")
+        else:
+            self.file_obj = open(self.path, "r", encoding="utf-8")
+
         try:
-            return open(fp, open_method)
-        except IOError as e:
-            sys.exit(f"Failed to open file: {e}")
+            self.read() # move to the first line in the file
+            self.fields = self._parseForFields() # set the field information to keep track of the columns in the file
+            return self
+        except IOError as e: 
+            sys.exit(f"Failed to open file: {e}") 
 
-
-    def _checkIdx(self, idx):
-        try:
-            return int(idx)
-        except ValueError:
-            return 0
-
-
-    def _formatLine(self, ls):
-        # split line string into list of strings
-        line_list = ls.strip().split("\t")
-
-        # if the file is not reading the header/metadata
-        if not line_list[0].startswith("#"):
-            # calculate the end position and add it to the end of the line list
-            pos = int(line_list[1])
-            ref_len = len(line_list[3])
-            end_pos = pos + ref_len - 1
-            line_list.append(end_pos)
-
-            # set specific data to their own parameters for better accessibility
-            self.pos_info = {                       # eg:
-                "chrom": line_list[0],              # CHROM1 
-                "start": pos + self.start_off,      # 10002
-                "end": end_pos + self.end_off}      # 10222
-            self.ref = line_list[self.fields["REF"]] # the refence sequence as a string            
-            self.alt = line_list[self.fields["ALT"]].split(",") # returns a list of all alt alleles
-
-
-        return line_list 
- 
 
     def read(self):
         # try to move to the next file as long is it is not already
         # at the end and it paused
         if (not self.end_state) & (not self.pause):
-            line_string = self.file_obj.readline()
+            line_string = self.file_obj.readline() # readline allows the ability to save positions in the file, as opposed to read()
 
             # if the line is not empty (ie. the end of the file has been reached) 
             if line_string:
+                self.prev_line = self.cur_line
                 # then format and set the current line
-                self.cur_line = self._formatLine(line_string)
+                self._formatLine(line_string)
             else: 
                 self.end_state = True
                 self.cur_line = None
@@ -89,11 +68,34 @@ class VCFReader:
         # the header end position is already saved, 
         # so skip to that position in the file then advance to the 1st line of data
         self._setFilePosition(self.header_end)
-        
 
-    def _setFilePosition(self, file_pos):
-        self.file_obj.seek(file_pos)
-        self.read()
+
+
+    def _checkIdx(self, idx):
+        try:
+            return int(idx)
+        except ValueError:
+            return -1
+
+
+    def _formatLine(self, ls):
+        # split line string into list of strings
+        self.cur_line = ls.strip().split("\t")
+
+        # if the file is not reading the header/metadata
+        if not self.cur_line[0].startswith("#"):
+            # calculate the end position and add it to the end of the line list
+            pos = int(self.cur_line[self.fields["POS"]])
+            ref_len = len(self.cur_line[self.fields["REF"]])
+            end_pos = pos + ref_len - 1
+
+            # set specific data to their own parameters for better accessibility
+            self.pos_info = {                       
+                "chrom": self.cur_line[self.fields["#CHROM"]],               
+                "start": pos + self.start_off,      
+                "end": end_pos + self.end_off}      
+            self.ref = self.cur_line[self.fields["REF"]] # the refence sequence as a string            
+            self.alt = self.cur_line[self.fields["ALT"]].split(",") # returns a list of all alt alleles
 
 
     def _parseForFields(self):
@@ -112,6 +114,11 @@ class VCFReader:
         # if the header information is not found, raise an error 
         raise ValueError("VCF Header Information Not Found")
         
+
+    def _setFilePosition(self, file_pos):
+        self.file_obj.seek(file_pos)
+        self.read()
+
              
     def _setFieldInfo(self, head_list):
         # loop over the header and make dictionary of the column names and their indices
@@ -122,35 +129,39 @@ class VCFReader:
         return col_dict
 
 
-    def _setName(self, fp):
-        path_str = fp
-        name_start = 0
-        # enumerate through the reversed file path to grab
-        # the index of where the file name starts
-        for i, letter in enumerate(reversed(path_str)):
-            if letter == "\\":
-                name_start = len(path_str) - i
-                break
-                
-        # slice for the file name minus the path and the format
-        return path_str[name_start:-4]
+
+    def __enter__(self):
+        return self.open_file()
+
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close_file()
 
 
 
 class BEDReader:
-    def __init__(self, file_path):
-        self.file_obj = self.open_file(file_path, "r")
-        self.name = self._setName(file_path)
+    def __init__(self, file_path, gz = False):
+        self.file_obj = None
+        self.gz = gz
+        self.path = file_path
         self.end_state = False
         self.line_string = None   
         self.cur_line = None
-        self.read()
 
-    def open_file(self, fp, open_method):
+
+
+    def open_file(self):
         try:
-            return open(fp, open_method)
+            if self.gz:
+                self.file_obj = gzip.open(self.path, "rt", encoding="utf-8")
+            else:
+                self.file_obj = open(self.path, "r", encoding="utf-8")
+            
+            self.read() # read in and set first line
+            return self
         except IOError as e:
             sys.exit(f"Failed to open file: {e}")
+
 
     def close_file(self):
         if not self.file_obj.closed:
@@ -171,31 +182,28 @@ class BEDReader:
 
     def _formatLine(self, ls):
         # split line string into list
-        line_list = ls.strip().split("\t")
+        self.cur_line = ls.strip().split("\t")
 
         # calculate the end position and add it to the end of the row list
-        pos = int(line_list[1])
-        end_pos = int(line_list[2])
-        line_list.append(end_pos)
+        pos = int(self.cur_line[1])
+        end_pos = int(self.cur_line[2])
+        self.cur_line.append(end_pos)
 
         # set position information parameter for easier access
         self.pos_info = {          # eg:
-                "chrom": line_list[0],   # CHROM1 
+                "chrom": self.cur_line[0],   # CHROM1 
                 "start": pos,            # 10002
                 "end": end_pos}          # 10222
-        self.ref = line_list[3]
+        self.ref = self.cur_line[3]
 
-        return line_list
+        return self.cur_line
 
 
-    def _setName(self, fp):
-        path_str = fp
-        # enumerate through the reversed file path to grab
-        # the index of where the file name starts
-        for i, letter in enumerate(reversed(path_str)):
-            if letter == "\\":
-                name_start = len(path_str) - i
-                break
-                
-        # slice for the file name minus the path and the format
-        return path_str[name_start:-4]
+
+    def __enter__(self):
+        return self.open_file()
+
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close_file()
+
