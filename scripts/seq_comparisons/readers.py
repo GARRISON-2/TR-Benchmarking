@@ -1,36 +1,18 @@
 import sys
 import gzip
 
-class VCFReader:
-    def __init__(self, file_path, start_offset = -1, end_offset = 0):
+
+class Reader:
+    def __init__(self, file_path):
         self.file_obj = None
         self.path = file_path
-        self.start_off = start_offset
-        self.end_off = end_offset
-        self.pause = False
         self.end_state = False # bool for whether or not the end of the file has been reached
-        self.prev_line = None
         self.cur_line = None # formatted list version of the last line string read from the file
 
 
     def close_file(self):
         if not self.file_obj.closed:
             self.file_obj.close()
-
-
-    def buildGt(self):
-    
-        # check indices to make sure they are ints (eg. accounting for 1|., etc.)
-        gt_idx = (self._checkIdx(self.cur_line[-1][0]), self._checkIdx(self.cur_line[-1][2]))
-        alleles = [self.ref, *self.alt, None]
-
-        # build genotype based on gt_idx indices
-        gt = [alleles[gt_idx[0]], alleles[gt_idx[1]]]
-  
-        self.genotype = gt
-
-        # add to list of genotypes for comparison between VCFs
-        return gt  
 
 
     def open_file(self):
@@ -41,16 +23,18 @@ class VCFReader:
 
         try:
             self.read() # move to the first line in the file
-            self.fields = self._parseForFields() # set the field information to keep track of the columns in the file
             return self
         except IOError as e: 
             sys.exit(f"Failed to open file: {e}") 
 
-
-    def read(self):
+ 
+    '''
+    Returns True if the Line was read, and False otherwise
+    '''
+    def read(self, pause = False):
         # try to move to the next file as long is it is not already
         # at the end and it paused
-        if (not self.end_state) & (not self.pause):
+        if (not self.end_state) and (not pause):
             line_string = self.file_obj.readline() # readline allows the ability to save positions in the file, as opposed to read()
 
             # if the line is not empty (ie. the end of the file has been reached) 
@@ -60,10 +44,62 @@ class VCFReader:
                 self._formatLine(line_string)
             else: 
                 self.end_state = True
+                self.prev_line = self.cur_line
                 self.cur_line = None
                 self.close_file()
 
+            
+            return True
+        
+        return False
+
+
+    def __enter__(self):
+        return self.open_file()
+
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close_file()
+
+
+
+
+class VCFReader(Reader):
+    def __init__(self, file_path, start_offset = -1, end_offset = 0):
+        super().__init__(file_path)
+        self.start_off = start_offset
+        self.end_off = end_offset
+        self.pause = False
+        self.prev_line = None
+        
+
+    def buildGt(self):
+    
+        # check indices to make sure they are ints (eg. accounting for 1|., etc.)
+        gt_idx = (self._checkIdx(self.cur_line[-1][0]), self._checkIdx(self.cur_line[-1][2]))
+        choices = [self.ref, *self.alt, None]
+
+        # build genotype based on gt_idx indices
+        gt = [choices[gt_idx[0]], choices[gt_idx[1]]]
+  
+        self.genotype = gt
+
+        # add to list of genotypes for comparison between VCFs
+        return gt  
+
+
+    def open_file(self):
+        super().open_file()
+
+        self.fields = self._parseForFields() # set the field information to keep track of the columns in the file
+
+        return self
+
+
+    def read(self):
+        return super().read(self.pause)
  
+
     def skipMetaData(self): 
         # the header end position is already saved, 
         # so skip to that position in the file then advance to the 1st line of data
@@ -130,56 +166,12 @@ class VCFReader:
 
 
 
-    def __enter__(self):
-        return self.open_file()
+class BEDReader(Reader):
+    def __init__(self, file_path):
+        super().__init__(file_path)
+        self.prev_line = None
 
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close_file()
-
-
-
-class BEDReader:
-    def __init__(self, file_path, gz = False):
-        self.file_obj = None
-        self.gz = gz
-        self.path = file_path
-        self.end_state = False
-        self.line_string = None   
-        self.cur_line = None
-
-
-
-    def open_file(self):
-        try:
-            if self.gz:
-                self.file_obj = gzip.open(self.path, "rt", encoding="utf-8")
-            else:
-                self.file_obj = open(self.path, "r", encoding="utf-8")
-            
-            self.read() # read in and set first line
-            return self
-        except IOError as e:
-            sys.exit(f"Failed to open file: {e}")
-
-
-    def close_file(self):
-        if not self.file_obj.closed:
-            self.file_obj.close()
-
-
-    def read(self):
-        if (not self.end_state):
-            try:
-                self.line_string = next(self.file_obj)
-                self.cur_line = self._formatLine(self.line_string)
-            # catch exception that signals end of file
-            except StopIteration:
-                self.end_state = True
-                self.cur_line = None
-                self.close_file()
-
-
+   
     def _formatLine(self, ls):
         # split line string into list
         self.cur_line = ls.strip().split("\t")
@@ -197,13 +189,4 @@ class BEDReader:
         self.ref = self.cur_line[3]
 
         return self.cur_line
-
-
-
-    def __enter__(self):
-        return self.open_file()
-
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close_file()
 

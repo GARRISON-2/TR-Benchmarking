@@ -11,8 +11,11 @@ LOCAL_DATA = os.path.join(PROJ_ROOT, 'local_data') # REMOVE FOR FINAL LAUNCH
 
 
 def compareString(str1, str2):
-    
-    if str1 and str2:
+    allowed = {'A', 'T', 'C', 'G'}
+    test_string = "ATCGX"
+
+    # if the string is not null and it doesnt contain any characters but A, T, C, or G
+    if (str1 and set(str1).issubset(allowed)) and (str2 and set(str2).issubset(allowed)):
         return lv.distance(str1, str2)
     else:
 
@@ -77,7 +80,6 @@ def mainloop(bed_file, vcf_list):
     offsets = [[-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0]]
 
 
-
     with ExitStack() as stack: 
 
         # File Prep
@@ -85,10 +87,11 @@ def mainloop(bed_file, vcf_list):
 
         # create list of vcf reader objects
         for i, vcf in enumerate(vcf_list):
-                    # create VCFReader object for file. VCFReader automatically opens the file
+                    # create VCFReader object for file. 
                     vcf_rdrs.append(VCFReader(os.path.join(DATA_DIR, vcf), 
                                         start_offset=offsets[i][0], 
                                         end_offset=offsets[i][1]))
+                    # add vcf to file stack which puts it under the with statement
                     stack.enter_context(vcf_rdrs[i])
                     # move past header data
                     vcf_rdrs[i].skipMetaData()
@@ -120,8 +123,8 @@ def mainloop(bed_file, vcf_list):
                 bof.write(f"\tBDDIST_START_{i}-{j}\tBDDIST_END_{i}-{j}")
         bof.write("\n")
         vof.write(temp1 + temp2 + "\n")
-        # Write metadata to output file
 
+        # Write metadata to output file
 
 
         # Main Operations loop
@@ -146,25 +149,29 @@ def mainloop(bed_file, vcf_list):
 
 
                 # Run Alingment Checks
-                # if current file position is ahead of bed position range, then pause operations
-                if ((reader.pos_info["start"] > bed.pos_info["end"]) and (reader.pos_info["chrom"] == bed.pos_info["chrom"])) or \
-                        reader.end_state:    
+                chrom_match = (reader.pos_info["chrom"] == bed.pos_info["chrom"])
+
+                # if current vcf position is ahead of bed position range, then pause operations
+                if ((reader.pos_info["start"] > bed.pos_info["end"]) and chrom_match):
 
                     reader.pause = True # pause current vcf from moving to the next line
 
-                else:
+                else: # if the current vcf is not ahead or the chromosomes dont match, continue moving forward
                     reader.pause = False
 
-                    # check to see if the vcf has fallen behind the bed
-                    while ((reader.pos_info["end"] < bed.pos_info["start"]) and \
-                        (reader.pos_info["chrom"] == bed.pos_info["chrom"])) and not reader.end_state:
+                    # check to see if the vcf has fallen behind the bed            
+                    while ((reader.pos_info["end"] < bed.pos_info["start"]) and chrom_match) \
+                        and not reader.end_state:
+
+                        # move the file line forward until it is no longer behind, or the end of the file is reached
                         print(f"{reader.name} skipping {list(reader.pos_info.values())}")
                         reader.read()
 
-                
+
+                # VCF-BED comparisons
                 if comps == 1 or comps == 2:
 
-                    if reader.pause:
+                    if reader.pause or reader.end_state:
                         bof_out_str += "\tNA\tNA"
                     else:
                         # BED Ref Comparison Operations
@@ -175,11 +182,12 @@ def mainloop(bed_file, vcf_list):
                         bof_out_str += f"\t{start_diff}\t{end_diff}"
                     
 
-
+            # VCF-VCF comparisons
             for i, reader in enumerate(vcf_rdrs):
-                if (comps == 1 or comps == 3): # and last_file
+                if (comps == 1 or comps == 3): 
 
                     for other_reader in vcf_rdrs[i+1:]:
+                        # if both readers are not paused or ended
                         if stateCheck(reader) and stateCheck(other_reader):
                             # calculate lv distance of genotypes
                             gt_diff, a1_diff, a2_diff = compareGt(reader.genotype, other_reader.genotype)
@@ -218,6 +226,6 @@ mainloop("test-isolated-vc-catalog.atarva.bed",
         "HG001.PAW79146.haplotagged.URfix.strkit.vcf",
         #"HG001.PAW79146.haplotagged.URfix.longTR.vcf",
         #"HG001.PAW79146.haplotagged.URfix.vcf",
-        #"HG001.PAW79146.haplotagged.URfix.vamos.vcf",
+        "HG001.PAW79146.haplotagged.URfix.vamos.vcf",
         #"medaka_to_ref.TR.vcf"
         ])
