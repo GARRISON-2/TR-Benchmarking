@@ -1,13 +1,15 @@
 import sys
 import gzip
+import io
 
 
 class Reader:
-    def __init__(self, file_path):
+    def __init__(self, file_path, buffer_size = io.DEFAULT_BUFFER_SIZE):
         self.file_obj = None
+        self.buffer = buffer_size
         self.path = file_path
         self.end_state = False # bool for whether or not the end of the file has been reached
-        self.cur_line = None # formatted list version of the last line string read from the file
+        self.cur_line = None
 
 
     def close_file(self):
@@ -19,7 +21,7 @@ class Reader:
         if self.path.endswith(".gz"):
             self.file_obj = gzip.open(self.path, "rt", encoding="utf-8")
         else:
-            self.file_obj = open(self.path, "r", encoding="utf-8")
+            self.file_obj = open(self.path, "r", encoding="utf-8", buffering=self.buffer)
 
         try:
             self.read() # move to the first line in the file
@@ -71,6 +73,7 @@ class VCFReader(Reader):
         self.end_off = end_offset
         self.pause = False
         self.prev_line = None
+        self.fields = None
         
 
     def buildGt(self):
@@ -91,7 +94,8 @@ class VCFReader(Reader):
     def open_file(self):
         super().open_file()
 
-        self.fields = self._parseForFields() # set the field information to keep track of the columns in the file
+        # set the field information to keep track of vcf columns
+        self.fields = self._parseForFields() 
 
         return self
 
@@ -119,37 +123,55 @@ class VCFReader(Reader):
         self.cur_line = ls.strip().split("\t")
 
         # if the file is not reading the header/metadata
-        if not self.cur_line[0].startswith("#"):
-            # calculate the end position and add it to the end of the line list
-            pos = int(self.cur_line[self.fields["POS"]])
-            ref_len = len(self.cur_line[self.fields["REF"]])
-            end_pos = pos + ref_len - 1
+        if not self.cur_line[0].startswith("#") and self.fields:  
+            try:  
+                # calculate the end position and add it to the end of the line list
+                
+                pos = int(self.cur_line[self.fields["POS"]])                   
+                ref_len = len(self.cur_line[self.fields["REF"]])
+                end_pos = pos + ref_len - 1
 
-            # set specific data to their own parameters for better accessibility
-            self.pos_info = {                       
-                "chrom": self.cur_line[self.fields["#CHROM"]],               
-                "start": pos + self.start_off,      
-                "end": end_pos + self.end_off}      
-            self.ref = self.cur_line[self.fields["REF"]] # the refence sequence as a string            
-            self.alt = self.cur_line[self.fields["ALT"]].split(",") # returns a list of all alt alleles
+                # set specific data to their own parameters for better accessibility
+                self.pos_info = {                       
+                    "chrom": self.cur_line[self.fields["CHROM"]],               
+                    "start": pos + self.start_off,      
+                    "end": end_pos + self.end_off}      
+                self.ref = self.cur_line[self.fields["REF"]] # the refence sequence as a string            
+                self.alt = self.cur_line[self.fields["ALT"]].split(",") # returns a list of all alt alleles
+            
+            except ValueError:
+                sys.exit(f"ERROR: From file: {self.path}.\nFailed to set position from {self.cur_line[self.fields['POS']]} from line: {self.cur_line}\n")
+            except IndexError as e:
+                sys.exit(f"ERROR: From file: {self.path}.\nMissing parameter data from line: {self.cur_line}")
+            except Exception as e:
+                sys.exit(f"ERROR:From file: {self.path}.\nUnexpected error setting parameters from line:{self.cur_line}: {e}")
 
 
     def _parseForFields(self):
-        
+        field_list = []
+
         # loop while the current line contains meta data
         while self.cur_line[0].startswith("#"):
-            if self.cur_line[0].startswith("#CHROM"):
-                # save the file position of the end of the header/metadata
-                self.header_end = self.file_obj.tell()
-                field_info = self._setFieldInfo(self.cur_line)  
-                self._setFilePosition(0) # return to the top of the file
-                return field_info
+            if self.cur_line[0].upper().startswith("#CHR"):
+                field_list = self.cur_line
+                field_list[0] = field_list[0][1:] # remove '#' from start of first field
+            else:
+                self.read()  
 
-            self.read()  
+        # save the file position of the end of the header/metadata
+        self.header_end = self.file_obj.tell()
 
-        # if the header information is not found, raise an error 
-        raise ValueError("VCF Header Information Not Found")
-        
+        # return to the top of the file
+        self._setFilePosition(0)
+
+        # if the data field names were not found
+        if not field_list:           
+            field_list = ["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"]
+            print(f"WARNING: Header not found. Using {field_list} for data field names.")
+
+
+        return self._setFieldInfo(field_list) 
+
 
     def _setFilePosition(self, file_pos):
         self.file_obj.seek(file_pos)
