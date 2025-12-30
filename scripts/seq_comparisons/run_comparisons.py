@@ -1,74 +1,13 @@
 import os
-import Levenshtein as lv
 from contextlib import ExitStack
 from readers import *
+from utils import *
 
 # set directory variables for file i/o
 PROJ_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(PROJ_ROOT, 'catalogs')
 # TESTING PURPOSES ONLY
 LOCAL_DATA = os.path.join(PROJ_ROOT, 'local_data') # REMOVE FOR FINAL LAUNCH
-
-
-def compareString(str1, str2):
-    allowed = {'A', 'T', 'C', 'G'}
-    test_string = "ATCGX"
-
-    # if the string is not null and it doesnt contain any characters but A, T, C, or G
-    if (str1 and set(str1).issubset(allowed)) and (str2 and set(str2).issubset(allowed)):
-        return lv.distance(str1, str2)
-    else:
-
-    # get the positional difference and calculate the lv distance based only on positions in the actual reference
-    # start_diff = str2.pos_info["start"] - str1.pos_info["start"]
-    # end_diff = len(str1.ref) - str2.pos_info["end"] - str1.pos_info["end"]
-
-    # dist2 = lv.distance(str1.ref[start_diff: end_diff], str2.ref[start_diff: end_diff])
-    
-    # return_dict = {
-    #     "dist": dist,
-    #     "dist2": dist2
-    # }
-
-        return None
-
-
-def NoneToZero(num):
-    if num is None:
-        return 0
-    else:
-        return num
-    
-
-def NoneToNA(input):
-    if not input:
-        return 'NA'
-    else:
-        return input
-
-
-def compareGt(gt1, gt2):
-    
-    # get distances for both permutations of comparing alleles
-    vert_dist = [compareString(gt1[0], gt2[0]), compareString(gt1[1], gt2[1])]
-    cross_dist = [compareString(gt1[1], gt2[0]), compareString(gt1[0], gt2[1])]
-
-    v_sum = NoneToZero(vert_dist[0]) + NoneToZero(vert_dist[1])
-    c_sum = NoneToZero(cross_dist[0]) + NoneToZero(cross_dist[1])
-
-    # if the allele order is mismatched between the genotypes
-    if v_sum > c_sum:
-
-        # use the cross distance since it is less,
-        # which means it is more likely to be the correct comparison ordering
-        return c_sum, NoneToNA(cross_dist[0]), NoneToNA(cross_dist[1])
-
-    else:
-        return v_sum, NoneToNA(cross_dist[0]), NoneToNA(cross_dist[1])
-
-
-def stateCheck(rdr):
-    return (not rdr.pause) and (not rdr.end_state)
 
 
 def mainloop(bed_file, vcf_list):
@@ -84,17 +23,29 @@ def mainloop(bed_file, vcf_list):
 
         # create list of vcf reader objects
         for i, vcf in enumerate(vcf_list):
-                # create VCFReader object for file. 
+          
+            try:
+                # create VCFReader object for file.
                 vcf_rdrs.append(VCFReader(os.path.join(DATA_DIR, vcf), 
-                                    start_offset=offsets[i][0], 
-                                    end_offset=offsets[i][1]))
-                # add vcf to file stack which puts it under the with statement
-                stack.enter_context(vcf_rdrs[i])
-                # move past header data
-                vcf_rdrs[i].skipMetaData()
+                                start_offset=offsets[i][0], 
+                                end_offset=offsets[i][1]))
 
-                # build first line's genotype and save it
+
+                # add vcf to exit stack which puts it under control of the with statement
+                stack.enter_context(vcf_rdrs[i])
+
+            except RuntimeError as e:
+                sys.exit(f"\nERROR\nExiting program due to file error: {e}")
+
+            # move past header data
+            vcf_rdrs[i].skipMetaData()
+
+            # build first line's genotype and save it
+            try: 
+                vcf_rdrs[i].read()
                 vcf_rdrs[i].buildGt()
+            except RuntimeError as e:
+                sys.exit(f"\nERROR\n{e}\nFrom file: {vcf_rdrs[i].path}")
 
         
         # print("Comparisons:\n1 (default): BED-VCF & VCF-VCF\n 2 : BED-VCF\n 3 : VCF-VCF")
@@ -103,11 +54,11 @@ def mainloop(bed_file, vcf_list):
         comps = 1
 
         if comps == 1 or comps == 2:
-            bof = open(os.path.join(LOCAL_DATA, "bed-comp.tsv"), "w")
+            bof = stack.enter_context(open(os.path.join(LOCAL_DATA, "bed-comp.tsv"), "w")) # open file and put it into the exit stack
             bof.write("#CHROM\tSTART\tEND")
 
         if comps == 1 or comps == 3:
-            vof = open(os.path.join(LOCAL_DATA, "vcf-comp.tsv"), "w")
+            vof = stack.enter_context(open(os.path.join(LOCAL_DATA, "vcf-comp.tsv"), "w"))
             vof.write(f"#CHROM\tSTART\tEND")
 
 
@@ -124,10 +75,9 @@ def mainloop(bed_file, vcf_list):
         # Write metadata to output file
 
 
-        # Main Operations loop
-        # loop until the bed file has reached its end
-        while not bed.end_state:
-        #while not all(end_states): or loop until all files are done
+        # Main Operations loop       
+        while not bed.end_state: # loop until the bed file has reached its end
+        #while not all(end_states): # or loop until all files are done
             bof_out_str = f"{bed.pos_info["chrom"]}\t{bed.pos_info["start"]}\t{bed.pos_info["end"]}"
             vof_out_str = f"{bed.pos_info["chrom"]}\t{bed.pos_info["start"]}\t{bed.pos_info["end"]}"
             gtd_sub_str = ""
@@ -142,7 +92,7 @@ def mainloop(bed_file, vcf_list):
 
                     # ensure vcf is in order
                     if reader.pos_info["chrom"] < prev_chrom:
-                        sys.exit(f"\nERROR\n{reader.path} using unknown order. Ending Program.")
+                        sys.exit(f"\nERROR\n{reader.path} using unknown order. Ending program.")
 
 
                 # Run Alingment Checks
@@ -163,7 +113,10 @@ def mainloop(bed_file, vcf_list):
 
                         # move the file line forward until it is no longer behind, or the end of the file is reached
                         print(f"\nWARNING: Skipping {list(reader.pos_info.values())} from {reader.path}")
-                        reader.read()
+                        try:
+                            reader.read()
+                        except RuntimeError as e:
+                            print(f"\nERROR\nExiting Program due to read error: {e}")
 
 
                 # VCF-BED Comparisons
@@ -208,12 +161,15 @@ def mainloop(bed_file, vcf_list):
             vof.write(vof_out_str + psd_sub_str + gtd_sub_str + "\n")
 
             # read lines for all files
-            bed.read()
-            for rdr in vcf_rdrs:
-                rdr.read()
+            try:
+                bed.read()
+                for rdr in vcf_rdrs:
+                    rdr.read()
 
-                if not rdr.end_state:
-                    rdr.buildGt()     
+                    if not rdr.end_state:
+                        rdr.buildGt()     
+            except RuntimeError as e:
+                sys.exit(f"\nERROR\nExiting Program due to read error: {e}")
 
             
     for rdr in vcf_rdrs:
@@ -228,11 +184,11 @@ def mainloop(bed_file, vcf_list):
 
 mainloop("test-isolated-vc-catalog.atarva.bed",
         [
-        #"HG001.PAW79146.haplotagged.URfix.atarva.vcf", 
-        #"HG001.strdust.vcf.gz",
-        #"HG001.PAW79146.haplotagged.URfix.strkit.vcf",
-        "HG001.PAW79146.haplotagged.URfix.longTR_copy.vcf",
-        #"HG001.PAW79146.haplotagged.URfix.vcf",
-        #"HG001.PAW79146.haplotagged.URfix.vamos.vcf",
-        #"medaka_to_ref.TR.vcf"
+        "HG001.PAW79146.haplotagged.URfix.atarva.vcf", 
+        "HG001.strdust.vcf.gz",
+        "HG001.PAW79146.haplotagged.URfix.strkit.vcf",
+        "HG001.PAW79146.haplotagged.URfix.longTR.vcf.gz",
+        "HG001.PAW79146.haplotagged.URfix.vcf",
+        "HG001.PAW79146.haplotagged.URfix.vamos.vcf",
+        "medaka_to_ref.TR.vcf"
         ])
