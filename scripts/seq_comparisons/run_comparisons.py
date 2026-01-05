@@ -10,11 +10,38 @@ DATA_DIR = os.path.join(PROJ_ROOT, 'catalogs')
 LOCAL_DATA = os.path.join(PROJ_ROOT, 'local_data') # REMOVE FOR FINAL LAUNCH
 
 
+class VCFPack:
+    def __init__(self, VCFReader, pause = False, lines_skipped = 0):
+        self.reader = VCFReader
+        self.pause = pause
+        self.skip_num = lines_skipped
+
+    def VCFSafeRead(self):
+        read_state = False
+
+        if not self.pause:  
+            read_state = self.reader.read()        
+            self.checkOrder()
+
+        return read_state
+
+
+    def checkOrder(self):
+        # check VCF Chromosome ordering
+        if not self.reader.prev_line[0].startswith("#"):
+            prev_chrom = self.reader.prev_line[self.reader.fields["CHROM"]]
+
+            # ensure vcf is in order
+            if self.reader.pos_info["chrom"] < prev_chrom:
+                sys.exit(f"\nERROR\n{self.reader.path} using unknown order. Ending program.")
+
+
+
 def mainloop(bed_file, vcf_list):
     vcf_rdrs = []
     comps = 0
     offsets = [[-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0], [-1, 0]]
-
+    offsets = [[0,0]] * 7
 
     with ExitStack() as stack: 
 
@@ -34,7 +61,7 @@ def mainloop(bed_file, vcf_list):
                 # add vcf to exit stack which puts it under control of the with statement
                 stack.enter_context(vcf_rdrs[i])
 
-            except RuntimeError as e:
+            except FileIOError as e:
                 sys.exit(f"\nERROR\nExiting program due to file error: {e}")
 
             # move past header data
@@ -44,8 +71,9 @@ def mainloop(bed_file, vcf_list):
             try: 
                 vcf_rdrs[i].read()
                 vcf_rdrs[i].buildGt()
-            except RuntimeError as e:
+            except (FileReadError, VCFFormatError) as e:
                 sys.exit(f"\nERROR\n{e}\nFrom file: {vcf_rdrs[i].path}")
+
 
         
         # print("Comparisons:\n1 (default): BED-VCF & VCF-VCF\n 2 : BED-VCF\n 3 : VCF-VCF")
@@ -77,7 +105,7 @@ def mainloop(bed_file, vcf_list):
 
         # Main Operations loop       
         while not bed.end_state: # loop until the bed file has reached its end
-        #while not all(end_states): # or loop until all files are done
+
             bof_out_str = f"{bed.pos_info["chrom"]}\t{bed.pos_info["start"]}\t{bed.pos_info["end"]}"
             vof_out_str = f"{bed.pos_info["chrom"]}\t{bed.pos_info["start"]}\t{bed.pos_info["end"]}"
             gtd_sub_str = ""
@@ -86,7 +114,9 @@ def mainloop(bed_file, vcf_list):
 
             # cycle through the vcf files and perform operations on the current line
             for i, reader in enumerate(vcf_rdrs): 
+                skip_count = 0
 
+                # check VCF Chromosome ordering
                 if not reader.prev_line[0].startswith("#"):
                     prev_chrom = reader.prev_line[reader.fields["CHROM"]]
 
@@ -95,8 +125,38 @@ def mainloop(bed_file, vcf_list):
                         sys.exit(f"\nERROR\n{reader.path} using unknown order. Ending program.")
 
 
+
                 # Run Alingment Checks
                 chrom_match = (reader.pos_info["chrom"] == bed.pos_info["chrom"])
+
+                # if vcf position is behind the bed, or the vcf chrom is behind, loop until the vcf catches up         
+                while (((reader.pos_info["end"] < bed.pos_info["start"]) and chrom_match) or (reader.pos_info["chrom"] < bed.pos_info["chrom"])) \
+                    and not reader.end_state:
+
+                    if skip_count == 0:
+                        print(f"\nWARNING: Skipping lines starting at {list(reader.pos_info.values())} from {reader.path}")
+
+                    # move the file line forward until it is no longer behind, or the end of the file is reached
+                    try: 
+                        vcf_rdrs[i].read()
+                    except (FileReadError, VCFFormatError) as e:
+                        sys.exit(f"\nERROR\n{e}\nFrom file: {vcf_rdrs[i].path}")
+
+
+
+                    if not reader.prev_line[0].startswith("#"):
+                        prev_chrom = reader.prev_line[reader.fields["CHROM"]]
+
+                        # ensure vcf is in order
+                        if reader.pos_info["chrom"] < prev_chrom:
+                            sys.exit(f"\nERROR\n{reader.path} using unknown order. Ending program.")
+
+                    skip_count += 1
+
+                if skip_count > 0:
+                    print(f"Lines skipped: {skip_count}\n")
+
+
                 # if current vcf position is ahead of bed position range, or if the vcf chrom is ahead, then pause operations
                 if ((reader.pos_info["start"] > bed.pos_info["end"]) and chrom_match) or \
                     (reader.pos_info["chrom"] > bed.pos_info["chrom"]):
@@ -106,18 +166,6 @@ def mainloop(bed_file, vcf_list):
                 # if the current vcf is not ahead or the chromosomes dont match, continue moving forward
                 else: 
                     reader.pause = False
-
-                    # if vcf position is behind the bed, or the vcf chrom is behind, loop until the vcf catches up         
-                    while (((reader.pos_info["end"] < bed.pos_info["start"]) and chrom_match) or (reader.pos_info["chrom"] < bed.pos_info["chrom"])) \
-                        and not reader.end_state:
-
-                        # move the file line forward until it is no longer behind, or the end of the file is reached
-                        print(f"\nWARNING: Skipping {list(reader.pos_info.values())} from {reader.path}")
-                        try:
-                            reader.read()
-                        except RuntimeError as e:
-                            print(f"\nERROR\nExiting Program due to read error: {e}")
-
 
                 # VCF-BED Comparisons
                 if comps == 1 or comps == 2:
@@ -131,7 +179,7 @@ def mainloop(bed_file, vcf_list):
                         end_diff = reader.pos_info["end"] - bed.pos_info["end"]
                         
                         if start_diff > 500 or end_diff > 500:
-                            print(f"WARNING-Large Positional difference at {bed.pos_info}")
+                            print(f"WARNING: Large Positional difference at {bed.pos_info}")
 
                         bof_out_str += f"\t{start_diff}\t{end_diff}"
                     
@@ -162,20 +210,26 @@ def mainloop(bed_file, vcf_list):
 
             # read lines for all files
             try:
+                
                 bed.read()
                 for rdr in vcf_rdrs:
                     rdr.read()
 
                     if not rdr.end_state:
                         rdr.buildGt()     
-            except RuntimeError as e:
-                sys.exit(f"\nERROR\nExiting Program due to read error: {e}")
+            except (FileReadError, VCFFormatError, BEDFormatError) as e:
+                sys.exit(f"\nERROR\n{e}\nFrom file: {vcf_rdrs[i].path}")
+            
 
             
     for rdr in vcf_rdrs:
         # if any vcfs are still not at their end, then they are likely out of order
         if not rdr.end_state:
             print(f"\nWARNING: BED file finished before {reader.path}.\n Check file order.")
+
+
+        # if VCFPack.skipped > 0
+            # print(f"\nWARNING: {VCFPack.skipped} lines skipped in {VCFPack.reader.path}")
 
 
     print("\n\n---PROGRAM COMPLETE---\n")

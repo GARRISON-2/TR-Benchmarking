@@ -28,23 +28,23 @@ class Reader:
             self.read() # move to the first line in the file
             return self
         except (IOError, OSError) as e: 
-            raise RuntimeError(f"File Opening Error: {e}")
+            raise FileIOError(f"File Opening Error: {e}")
         
 
     '''
     Returns True if the Line was read, and False otherwise
     '''
-    def read(self, pause = False, format = True):
+    def read(self, format = True):
         # try to move to the next file as long is it is not already at the end or paused 
-        if (not self.end_state) and (not pause):
+        if not self.end_state:
             try:
                 line_string = self.file_obj.readline() # readline allows the ability to save positions in the file, as opposed to read()
             except gzip.BadGzipFile:
-                raise RuntimeError(f"Failed to read from {self.path}\nInvalid .gz")
+                raise FileReadError(f"Failed to read from {self.path}\nInvalid .gz")
             except UnicodeError:
-                raise RuntimeError(f"Failed to read from {self.path}\n Contains Invalid UTF-8 Characters")
+                raise FileReadError(f"Failed to read from {self.path}\nContains Invalid UTF-8 Characters")
 
-            # if the line is not empty (ie. the end of the file has been reached) 
+            # if the line is not empty (ie. the end of the file has not been reached) 
             if line_string:
                 self.prev_line = self.cur_line
                 if format:
@@ -57,10 +57,11 @@ class Reader:
                 self.prev_line = self.cur_line
                 self.cur_line = None
                 self.close_file()
-          
+
             return True
         
         return False
+        #raise FileReadError(f"Failed to read from {self.path}\nFile has reached end state.")
 
 
     def __enter__(self):
@@ -108,10 +109,10 @@ class VCFReader(Reader):
             return gt  
         
         except (IndexError, ValueError):
-            raise RuntimeError(f"Failed to construct Genotype using '{idx_str}' from sample: {sample_str}")
+            raise VCFFormatError(f"Failed to construct Genotype using '{idx_str}' from sample: {sample_str}")
 
         except Exception as e:
-            raise RuntimeError(f"Failed to construct Genotype due to unknown error: {e}\nFrom sample: {sample_str}")
+            raise VCFFormatError(f"Failed to construct Genotype due to unknown error: {e}\nFrom sample: {sample_str}")
 
 
     '''
@@ -130,7 +131,12 @@ class VCFReader(Reader):
     
     '''
     def read(self):
-        return super().read(self.pause)
+        read_state = False
+
+        if not self.pause: 
+            read_state = super().read()
+        
+        return read_state
  
 
     '''
@@ -177,13 +183,13 @@ class VCFReader(Reader):
                 self.alt = self.cur_line[self.fields["ALT"]].split(",") # returns a list of all alt alleles
             
             except ValueError:
-                raise RuntimeError(f"Failed to set position '{self.cur_line[self.fields['POS']]}' from line: {self.cur_line}\n")
+                raise VCFFormatError(f"Failed to set position '{self.cur_line[self.fields['POS']]}' from line: {self.cur_line}\n")
             
             except IndexError:
-                raise RuntimeError(f"Missing parameter data from line: {self.cur_line}")
+                raise VCFFormatError(f"Missing parameter data from line: {self.cur_line}")
             
             except Exception as e:
-                raise RuntimeError(f"Unexpected error setting parameters from line: {self.cur_line}\n{e}")
+                raise VCFFormatError(f"Unexpected error setting parameters from line: {self.cur_line}\n{e}")
 
   
     '''
@@ -257,12 +263,29 @@ class BEDReader(Reader):
             self.ref = self.cur_line[3]
 
         except ValueError:
-            raise RuntimeError(f"ERROR: From file: {self.path}\nFailed to set position {self.cur_line[self.fields['POS']]} from line: {self.cur_line}\n")
+            raise BEDFormatError(f"ERROR: From file: {self.path}\nFailed to set position {self.cur_line[self.fields['POS']]} from line: {self.cur_line}\n")
         except IndexError:
-            raise RuntimeError(f"ERROR: From file: {self.path}\nMissing parameter data from line: {self.cur_line}")
+            raise BEDFormatError(f"ERROR: From file: {self.path}\nMissing parameter data from line: {self.cur_line}")
         except Exception as e:
-            raise RuntimeError(f"ERROR:From file: {self.path}\nUnexpected error setting parameters from line:{self.cur_line}: {e}")
+            raise BEDFormatError(f"ERROR:From file: {self.path}\nUnexpected error setting parameters from line:{self.cur_line}: {e}")
 
 
         return self.cur_line
 
+
+
+class FileIOError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
+class FileReadError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
+class BEDFormatError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
+class VCFFormatError(Exception):
+    def __init__(self, message):
+        super().__init__(message)

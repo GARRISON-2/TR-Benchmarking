@@ -1,6 +1,7 @@
 import Levenshtein as lv
 
 
+
 def compareString(str1, str2, method="lv"):
     allowed = {'A', 'T', 'C', 'G'}
 
@@ -45,9 +46,13 @@ def compareGt(gt1, gt2):
 
     return best_sum, NoneToNA(best_dist[0]), NoneToNA(best_dist[1])
 
+'''
+def compareGCContent(str1, str2):
+    str1_gc = [count for count in str1[]]
+    str2_gc = [count for count in str2[]]
 
-def compareGCContent():
-    pass
+    return str1_gc - str2_gc
+''' 
 
 
 def stateCheck(rdr):
