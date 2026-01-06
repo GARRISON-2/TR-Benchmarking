@@ -1,4 +1,33 @@
 import Levenshtein as lv
+from readers import VCFReader
+import sys
+
+
+
+class SC_VCFReader(VCFReader):
+    def __init__(self, file_path, start_offset = 0, end_offset = 0, pause = False, lines_skipped = 0):
+        super().__init__(file_path, start_offset, end_offset)
+        self.pause = pause
+        self.skip_num = lines_skipped
+
+    def safeRead(self):
+        read_state = False
+
+        if not self.pause:  
+            read_state = self.read()        
+
+        return read_state
+
+
+    def checkOrder(self, order_method="ASCII"):
+        # check VCF Chromosome ordering
+        if not self.prev_line[0].startswith("#"):
+            prev_chrom = self.prev_line[1]
+
+            # ensure vcf is in order
+            if self.pos_info["chrom"] < prev_chrom:
+                sys.exit(f"\nERROR\n{self.path} using unknown order. Ending program.")
+
 
 
 
@@ -44,6 +73,7 @@ def compareGt(gt1, gt2):
     # assume the lesser distance is the correct comparison order
     best_sum, best_dist = (v_sum, vert_dist) if v_sum <= c_sum else (c_sum, cross_dist)
 
+	# returns the sum of the differences between alleles, as well as the individual differences
     return best_sum, NoneToNA(best_dist[0]), NoneToNA(best_dist[1])
 
 '''

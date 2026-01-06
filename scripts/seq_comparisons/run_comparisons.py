@@ -1,4 +1,5 @@
 import os
+import sys
 from contextlib import ExitStack
 from readers import *
 from utils import *
@@ -9,31 +10,6 @@ DATA_DIR = os.path.join(PROJ_ROOT, 'catalogs')
 # TESTING PURPOSES ONLY
 LOCAL_DATA = os.path.join(PROJ_ROOT, 'local_data') # REMOVE FOR FINAL LAUNCH
 
-
-class VCFPack:
-    def __init__(self, VCFReader, pause = False, lines_skipped = 0):
-        self.reader = VCFReader
-        self.pause = pause
-        self.skip_num = lines_skipped
-
-    def VCFSafeRead(self):
-        read_state = False
-
-        if not self.pause:  
-            read_state = self.reader.read()        
-            self.checkOrder()
-
-        return read_state
-
-
-    def checkOrder(self):
-        # check VCF Chromosome ordering
-        if not self.reader.prev_line[0].startswith("#"):
-            prev_chrom = self.reader.prev_line[self.reader.fields["CHROM"]]
-
-            # ensure vcf is in order
-            if self.reader.pos_info["chrom"] < prev_chrom:
-                sys.exit(f"\nERROR\n{self.reader.path} using unknown order. Ending program.")
 
 
 
@@ -53,7 +29,7 @@ def mainloop(bed_file, vcf_list):
           
             try:
                 # create VCFReader object for file.
-                vcf_rdrs.append(VCFReader(os.path.join(DATA_DIR, vcf), 
+                vcf_rdrs.append(SC_VCFReader(os.path.join(DATA_DIR, vcf), 
                                 start_offset=offsets[i][0], 
                                 end_offset=offsets[i][1]))
 
@@ -69,7 +45,7 @@ def mainloop(bed_file, vcf_list):
 
             # build first line's genotype and save it
             try: 
-                vcf_rdrs[i].read()
+                vcf_rdrs[i].safeRead()
                 vcf_rdrs[i].buildGt()
             except (FileReadError, VCFFormatError) as e:
                 sys.exit(f"\nERROR\n{e}\nFrom file: {vcf_rdrs[i].path}")
@@ -116,15 +92,8 @@ def mainloop(bed_file, vcf_list):
             for i, reader in enumerate(vcf_rdrs): 
                 skip_count = 0
 
-                # check VCF Chromosome ordering
-                if not reader.prev_line[0].startswith("#"):
-                    prev_chrom = reader.prev_line[reader.fields["CHROM"]]
-
-                    # ensure vcf is in order
-                    if reader.pos_info["chrom"] < prev_chrom:
-                        sys.exit(f"\nERROR\n{reader.path} using unknown order. Ending program.")
-
-
+                # check VCF chromosome ordering
+                reader.checkOrder()
 
                 # Run Alingment Checks
                 chrom_match = (reader.pos_info["chrom"] == bed.pos_info["chrom"])
@@ -133,28 +102,17 @@ def mainloop(bed_file, vcf_list):
                 while (((reader.pos_info["end"] < bed.pos_info["start"]) and chrom_match) or (reader.pos_info["chrom"] < bed.pos_info["chrom"])) \
                     and not reader.end_state:
 
-                    if skip_count == 0:
-                        print(f"\nWARNING: Skipping lines starting at {list(reader.pos_info.values())} from {reader.path}")
+                    #if skip_count == 0:
+                    #    print(f"\nWARNING: Skipping lines starting at {list(reader.pos_info.values())} from {reader.path}")
 
                     # move the file line forward until it is no longer behind, or the end of the file is reached
                     try: 
-                        vcf_rdrs[i].read()
+                        vcf_rdrs[i].safeRead()
+                        vcf_rdrs[i].checkOrder()
                     except (FileReadError, VCFFormatError) as e:
                         sys.exit(f"\nERROR\n{e}\nFrom file: {vcf_rdrs[i].path}")
 
-
-
-                    if not reader.prev_line[0].startswith("#"):
-                        prev_chrom = reader.prev_line[reader.fields["CHROM"]]
-
-                        # ensure vcf is in order
-                        if reader.pos_info["chrom"] < prev_chrom:
-                            sys.exit(f"\nERROR\n{reader.path} using unknown order. Ending program.")
-
-                    skip_count += 1
-
-                if skip_count > 0:
-                    print(f"Lines skipped: {skip_count}\n")
+                    reader.skip_num += 1
 
 
                 # if current vcf position is ahead of bed position range, or if the vcf chrom is ahead, then pause operations
@@ -210,13 +168,13 @@ def mainloop(bed_file, vcf_list):
 
             # read lines for all files
             try:
-                
-                bed.read()
                 for rdr in vcf_rdrs:
-                    rdr.read()
+                    rdr.safeRead()
 
                     if not rdr.end_state:
-                        rdr.buildGt()     
+                        rdr.buildGt()   
+
+                bed.read() 
             except (FileReadError, VCFFormatError, BEDFormatError) as e:
                 sys.exit(f"\nERROR\n{e}\nFrom file: {vcf_rdrs[i].path}")
             
@@ -225,11 +183,11 @@ def mainloop(bed_file, vcf_list):
     for rdr in vcf_rdrs:
         # if any vcfs are still not at their end, then they are likely out of order
         if not rdr.end_state:
-            print(f"\nWARNING: BED file finished before {reader.path}.\n Check file order.")
+            print(f"\nWARNING: BED file finished before {reader.path}.\nPossible chromosome ordering error.")
 
 
-        # if VCFPack.skipped > 0
-            # print(f"\nWARNING: {VCFPack.skipped} lines skipped in {VCFPack.reader.path}")
+        if rdr.skip_num > 0:
+            print(f"\nWARNING: {rdr.skip_num} lines skipped in {rdr.path}")
 
 
     print("\n\n---PROGRAM COMPLETE---\n")
@@ -244,5 +202,6 @@ mainloop("test-isolated-vc-catalog.atarva.bed",
         "HG001.PAW79146.haplotagged.URfix.longTR.vcf.gz",
         "HG001.PAW79146.haplotagged.URfix.vcf",
         "HG001.PAW79146.haplotagged.URfix.vamos.vcf",
+        "test_cases.vcf"
         "medaka_to_ref.TR.vcf"
         ])
