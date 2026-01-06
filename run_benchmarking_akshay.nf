@@ -105,7 +105,8 @@ workflow {
     // print_aligned_samples(aligned_samples)
     // mosdepth(aligned_samples, ref)
     // strkit(aligned_samples, ref, fai)
-    strkitrr(aligned_samples, ref, fai)
+    // strkitrr(aligned_samples, ref, fai)
+    atarva(aligned_samples, ref, fai)
     // strdust(aligned_samples, ref, fai)
     // vamos(aligned_samples, ref, fai)
     // longTR(aligned_samples, ref, fai)
@@ -316,6 +317,32 @@ process longTR {
         --regions ${tr_regions} \\
         --bams ${aln} \\
         --tr-vcf ${sample}.longTR.vcf.gz
+    """
+}
+
+process atarva {
+    //conda 'envs/atarva-3.0.0.yaml'
+    container 'dhaksnamoorthy/atarva:v0.3.1'
+
+    cpus 1
+    memory { 4.GB * task.attempt }
+    time { 4.h * task.attempt }
+
+    publishDir variantDir + '/atarva', mode: 'copy'
+
+    input:
+    tuple val(sample), path(aln), path(idx), val(karyotype)
+    path ref
+    path fai
+
+    output:
+    path "${sample}.atarva.vcf"
+
+    script:
+    def atarva_tr_regions = '/pl/active/dashnowlab/projects/TR-benchmarking/catalogs/test-isolated-vc-catalog.atarva.bed.gz'
+
+    """
+    atarva -t 1 -f ${ref} -b ${aln} -r ${atarva_tr_regions} --format cram --haplotag HP --min-reads 1 --karyotype ${karyotype} -o ${sample}.atarva.vcf
     """
 }
 
