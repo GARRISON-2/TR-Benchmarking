@@ -39,26 +39,30 @@ class Reader:
         if not self.end_state:
             try:
                 line_string = self.file_obj.readline() # readline allows the ability to save positions in the file, as opposed to read()
+            
+                # if the line is not empty (ie. the end of the file has not been reached) 
+                if line_string:
+                    self.prev_line = self.cur_line
+                    if format:
+                        # then format and set the current line
+                        self.cur_line = self.formatLine(line_string)
+                    else:
+                        self.cur_line = line_string
+                else: 
+                    self.end_state = True
+                    self.prev_line = self.cur_line
+                    self.cur_line = None
+                    self.close_file()
+
+                return True
+            
+            
             except gzip.BadGzipFile:
                 raise FileReadError(f"Failed to read from {self.path}\nInvalid .gz")
             except UnicodeError:
                 raise FileReadError(f"Failed to read from {self.path}\nContains Invalid UTF-8 Characters")
 
-            # if the line is not empty (ie. the end of the file has not been reached) 
-            if line_string:
-                self.prev_line = self.cur_line
-                if format:
-                    # then format and set the current line
-                    self.formatLine(line_string)
-                else:
-                    self.cur_line = line_string
-            else: 
-                self.end_state = True
-                self.prev_line = self.cur_line
-                self.cur_line = None
-                self.close_file()
 
-            return True
         
         return False
         #raise FileReadError(f"Failed to read from {self.path}\nFile has reached end state.")
@@ -76,10 +80,11 @@ class Reader:
 '''
 '''
 class VCFReader(Reader):
-    def __init__(self, file_path, start_offset = 0, end_offset = 0):
+    def __init__(self, file_path, start_offset = 0, end_offset = 0, pos_only = False):
         super().__init__(file_path)
         self.start_off = start_offset
         self.end_off = end_offset
+        self.pos_only = pos_only
         self.prev_line = None
         
 
@@ -143,36 +148,41 @@ class VCFReader(Reader):
     '''
     def formatLine(self, ls):
         # split line string into list of strings
-        self.cur_line = ls.strip().split("\t")
+        line_list = ls.strip().split("\t")
 
         # if the file is not reading the header/metadata
-        if not self.cur_line[0].startswith("#"):  
+        if not line_list[0].startswith("#"):  
             try:  
                 # calculate the end position and add it to the end of the line list
                 
-                pos = int(self.cur_line[1])                   
-                ref_len = len(self.cur_line[3])
-                end_pos = pos + ref_len - 1
+                pos = int(line_list[1]) 
+
+                if not self.pos_only:            
+                    ref_len = len(line_list[3]) # length of REF
+                    end_pos = pos + ref_len - 1
+                else:
+                    info_col = line_list[7].split(';') # grab the INFO column
+                    end_pos = int(info_col[0].strip("END="))
 
                 # set specific data to their own parameters for better accessibility
                 self.pos_info = {                       
-                    "chrom": self.cur_line[0],               
+                    "chrom": line_list[0],               
                     "start": pos + self.start_off,      
                     "end": end_pos + self.end_off}      
-                self.ref = self.cur_line[3] # the refence sequence as a string            
-                self.alt = self.cur_line[4].split(",") # returns a list of all alt alleles
-            
+                self.ref = line_list[3] # the refence sequence as a string            
+                self.alt = line_list[4].split(",") # returns a list of all alt alleles
+                    
             except ValueError:
-                raise VCFFormatError(f"Failed to set position '{self.cur_line[4]}' from line: {self.cur_line}\n")
+                raise VCFFormatError(f"Failed to set position '{line_list[4]}' from line: {line_list}\n")
             
             except IndexError:
-                raise VCFFormatError(f"Missing parameter data from line: {self.cur_line}")
+                raise VCFFormatError(f"Missing parameter data from line: {line_list}")
             
             except Exception as e:
-                raise VCFFormatError(f"Unexpected error setting parameters from line: {self.cur_line}\n{e}")
+                raise VCFFormatError(f"Unexpected error setting parameters from line: {line_list}\n{e}")
 
-  
-
+        return line_list
+        
     '''
     
     '''
@@ -190,30 +200,30 @@ class BEDReader(Reader):
    
     def formatLine(self, ls):
         # split line string into list
-        self.cur_line = ls.strip().split("\t")
+        line_list = ls.strip().split("\t")
 
         try:
             # calculate the end position and add it to the end of the row list
-            pos = int(self.cur_line[1])
-            end_pos = int(self.cur_line[2])
-            self.cur_line.append(end_pos)
+            pos = int(line_list[1])
+            end_pos = int(line_list[2])
+            line_list.append(end_pos)
 
             # set position information parameter for easier access
             self.pos_info = {          # eg:
-                    "chrom": self.cur_line[0],   # CHROM1 
+                    "chrom": line_list[0],   # CHROM1 
                     "start": pos,            # 10002
                     "end": end_pos}          # 10222
-            self.ref = self.cur_line[3]
+            self.ref = line_list[3]
 
         except ValueError:
-            raise BEDFormatError(f"ERROR: From file: {self.path}\nFailed to set position {self.cur_line[self.fields['POS']]} from line: {self.cur_line}\n")
+            raise BEDFormatError(f"ERROR: From file: {self.path}\nFailed to set position {line_list[self.fields['POS']]} from line: {line_list}\n")
         except IndexError:
-            raise BEDFormatError(f"ERROR: From file: {self.path}\nMissing parameter data from line: {self.cur_line}")
+            raise BEDFormatError(f"ERROR: From file: {self.path}\nMissing parameter data from line: {line_list}")
         except Exception as e:
-            raise BEDFormatError(f"ERROR:From file: {self.path}\nUnexpected error setting parameters from line:{self.cur_line}: {e}")
+            raise BEDFormatError(f"ERROR:From file: {self.path}\nUnexpected error setting parameters from line:{line_list}: {e}")
 
 
-        return self.cur_line
+        return line_list
 
 
 
