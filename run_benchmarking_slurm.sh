@@ -27,7 +27,7 @@ WORK_DIR="${BASE}/work_elbay"
 
 
 echo "== Starting nextflow =="
-nextflow run "$@" -profile singularity -w "$WORK_DIR" -resume
+nextflow run "$@" -profile singularity -w "$WORK_DIR"
 echo "== Nextflow complete =="
 
 # Example usage: sbatch run_benchmarking_slurm.sh run_benchmarking.nf --list test_bam.list --ref /pl/active/dashnowlab/data/ref-genomes/human_GRCh38_no_alt_analysis_set.fasta -with-overwrite
