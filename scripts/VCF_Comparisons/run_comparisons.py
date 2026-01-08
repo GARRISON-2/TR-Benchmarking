@@ -1,15 +1,15 @@
 import os
 import sys
 from contextlib import ExitStack
-from readers import *
-from comp_readers import *
-from utils import *
+from helpers.readers import *
+from helpers.comp_readers import *
+from helpers.utils import *
 
 # set directory variables for easy file i/o while testing
 PROJ_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(PROJ_ROOT, 'catalogs')
-SEQ_DIR = os.path.join(PROJ_ROOT, 'scripts\\seq_comparisons')
-#LOCAL_DATA = os.path.join(PROJ_ROOT, 'local_data')
+LOCAL = os.path.join(PROJ_ROOT, 'scripts\\VCF_Comparisons')
+#LOCAL = os.path.join(PROJ_ROOT, 'local_data')
 
 
 
@@ -50,8 +50,8 @@ def mainloop(bed_file, vcf_list):
 
 
         # open file and put it into the exit stack
-        bof = stack.enter_context(open(os.path.join(SEQ_DIR, "bed-comp.tsv"), "w")) 
-        vof = stack.enter_context(open(os.path.join(SEQ_DIR, "vcf-comp.tsv"), "w"))
+        bof = stack.enter_context(open(os.path.join(LOCAL, "bed-comp.tsv"), "w")) 
+        vof = stack.enter_context(open(os.path.join(LOCAL, "vcf-comp.tsv"), "w"))
         
 
         # Write metadata to output file

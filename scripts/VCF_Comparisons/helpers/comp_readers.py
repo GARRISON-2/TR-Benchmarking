@@ -1,4 +1,4 @@
-from readers import *
+from helpers.readers import *
 
 class SC_VCFReader(VCFReader):
     def __init__(self, file_path, start_offset = 0, end_offset = 0, pos_only = False, pause = False, lines_skipped = 0):
