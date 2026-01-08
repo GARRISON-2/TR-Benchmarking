@@ -2,24 +2,23 @@ import os
 import sys
 from contextlib import ExitStack
 from readers import *
+from comp_readers import *
 from utils import *
 
-# set directory variables for file i/o
+# set directory variables for easy file i/o while testing
 PROJ_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(PROJ_ROOT, 'catalogs')
-# TESTING PURPOSES ONLY
-LOCAL_DATA = os.path.join(PROJ_ROOT, 'local_data') # REMOVE FOR FINAL LAUNCH
-
+SEQ_DIR = os.path.join(PROJ_ROOT, 'scripts\\seq_comparisons')
+#LOCAL_DATA = os.path.join(PROJ_ROOT, 'local_data')
 
 
 
 def mainloop(bed_file, vcf_list):
     vcf_rdrs = []
-    comps = 0
 
     with ExitStack() as stack: 
 
-        # File Prep
+        # create bed reader and enter the file into the stack, putting it under control of the with statement
         bed = stack.enter_context(BEDReader(os.path.join(DATA_DIR, bed_file)))
 
         # create list of vcf reader objects
@@ -31,7 +30,7 @@ def mainloop(bed_file, vcf_list):
                                 end_offset=vcf_info[1][1]))
 
 
-                # add vcf to exit stack which puts it under control of the with statement
+                # add vcf to exit stack 
                 stack.enter_context(vcf_rdrs[i])
 
             except FileIOError as e:
@@ -40,10 +39,8 @@ def mainloop(bed_file, vcf_list):
             # move past header data
             vcf_rdrs[i].skipMetaData()
 
-
-            # TEMP FIX
             # HG001.PAW79146.haplotagged.URfix.vcf & HG001.PAW79146.haplotagged.URfix.vamos.vcf are currently both position only
-            if i == 3 or i == 4:
+            if vcf_list[i][2] == True:
                 vcf_rdrs[i].pos_only = True
 
 
@@ -53,26 +50,27 @@ def mainloop(bed_file, vcf_list):
 
 
         # open file and put it into the exit stack
-        bof = stack.enter_context(open(os.path.join(LOCAL_DATA, "bed-comp.tsv"), "w")) 
-        vof = stack.enter_context(open(os.path.join(LOCAL_DATA, "vcf-comp.tsv"), "w"))
+        bof = stack.enter_context(open(os.path.join(SEQ_DIR, "bed-comp.tsv"), "w")) 
+        vof = stack.enter_context(open(os.path.join(SEQ_DIR, "vcf-comp.tsv"), "w"))
         
-
-        # Configure headers for output files
-        bof.write("#CHROM\tSTART\tEND")
-        vof.write(f"#CHROM\tSTART\tEND")
-        temp1 = ""
-        temp2 = ""
-        for i, rdr_1 in enumerate(vcf_rdrs):
-            for j, rdr_j in enumerate(vcf_rdrs[i+1:], i+1):
-                temp1 += f"\tPSDIST_START_{i}-{j}\tPSDIST_END_{i}-{j}"
-                temp2 += f"\tGTDIST_ALL1_{i}-{j}\tGTDIST_ALL2_{i}-{j}"
-            bof.write(f"\tBDDIST_START_{i}\tBDDIST_END_{i}")
-        bof.write("\n")
-        vof.write(temp1 + temp2 + "\n")
-
 
         # Write metadata to output file
-        
+
+
+
+
+        # Configure headers for output files
+        header_start = f"#CHROM\tSTART\tEND"
+        bof_header = ""
+        ps_header = ""
+        gt_header = ""
+        for i in range(len(vcf_rdrs)):
+            for j in range(i+1, len(vcf_rdrs)):
+                ps_header += f"\tPSDIST_START_{i}-{j}\tPSDIST_END_{i}-{j}"
+                gt_header += f"\tLVDIST_ALL1_{i}-{j}\tLVDIST_ALL2_{i}-{j}"
+            bof_header += f"\tBDDIST_START_{i}\tBDDIST_END_{i}"
+        bof.write(header_start + bof_header + "\n")
+        vof.write(header_start + ps_header + gt_header + "\n")
 
 
         # Main Operations loop       
@@ -85,11 +83,8 @@ def mainloop(bed_file, vcf_list):
 
 
             # cycle through all vcf files and ensure they are synced to the bed before performing comparisons
-            for i, reader in enumerate(vcf_rdrs): 
-
-                # run alignment logic to ensure VCF and bed file are synced to the same positions
-                reader.syncToBed(bed.pos_info)              
-
+            [reader.syncToBed(bed.pos_info) for reader in vcf_rdrs]
+                                      
 
             # Run comparisons on each VCF
             for i, reader in enumerate(vcf_rdrs):
@@ -157,12 +152,12 @@ def mainloop(bed_file, vcf_list):
 
 mainloop("test-isolated-vc-catalog.atarva.bed.gz",
         [
-        ["HG001.PAW79146.haplotagged.URfix.atarva.vcf", [0,0]], # the file name, and the offset amount (eg. [-1, 0] for 1 based inclusive)
-        ["HG001.strdust.vcf.gz", [0,0]],
-        ["HG001.PAW79146.haplotagged.URfix.strkit.vcf", [0,0]],
-       # ["HG001.PAW79146.haplotagged.URfix.longTR.vcf.gz", [0,0]],
-        ["HG001.PAW79146.haplotagged.URfix.vcf", [0,0]],
-        ["HG001.PAW79146.haplotagged.URfix.vamos.vcf", [0,0]],
-       # ["medaka_to_ref.TR.vcf", [0,0]]
-       # ["test_cases.vcf", [0,0]]
+        ["HG001.PAW79146.haplotagged.URfix.atarva.vcf", [0, 0], False], # the file name, and the offset amount (eg. [-1, 0] for 1 based inclusive)
+        ["HG001.strdust.vcf.gz", [0,0], False],
+        ["HG001.PAW79146.haplotagged.URfix.strkit.vcf", [0,0], False],
+       # ["HG001.PAW79146.haplotagged.URfix.longTR.vcf.gz", [0,0], False],
+        ["HG001.PAW79146.haplotagged.URfix.straglr.vcf", [0,0], True],
+        ["HG001.PAW79146.haplotagged.URfix.vamos.vcf", [0,0], True],
+       # ["medaka_to_ref.TR.vcf", [0,0], False]
+       # ["test_cases.vcf", [0,0], False]
         ])

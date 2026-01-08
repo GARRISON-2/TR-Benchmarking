@@ -9,7 +9,7 @@ class Reader:
         self.file_obj = None
         self.buffer = buffer_size
         self.path = file_path
-        self.end_state = False # bool for whether or not the end of the file has been reached
+        self.end_state = False # whether or not the end of the file has been reached
         self.cur_line = None
 
 
@@ -34,7 +34,7 @@ class Reader:
     '''
     Returns True if the Line was read, and False otherwise
     '''
-    def read(self, format = True):
+    def read(self, format = None):
         # try to move to the next file as long is it is not already at the end or paused 
         if not self.end_state:
             try:
@@ -43,9 +43,9 @@ class Reader:
                 # if the line is not empty (ie. the end of the file has not been reached) 
                 if line_string:
                     self.prev_line = self.cur_line
-                    if format:
+                    if format is not None:
                         # then format and set the current line
-                        self.cur_line = self.formatLine(line_string)
+                        self.cur_line = format(line_string)
                     else:
                         self.cur_line = line_string
                 else: 
@@ -80,12 +80,16 @@ class Reader:
 '''
 '''
 class VCFReader(Reader):
-    def __init__(self, file_path, start_offset = 0, end_offset = 0, pos_only = False):
+    def __init__(self, file_path, start_offset = 0, end_offset = 0):
         super().__init__(file_path)
         self.start_off = start_offset
         self.end_off = end_offset
-        self.pos_only = pos_only
         self.prev_line = None
+        self.header_end = None
+
+        self.pos_info = None
+        self.ref = None
+        self.alt = None
         
 
 
@@ -133,6 +137,10 @@ class VCFReader(Reader):
         self.header_end = self.file_obj.tell()
 
 
+    def read(self, format_method = None):
+        return super().read(format_method or self.formatLine)
+
+
     '''
     
     '''
@@ -152,25 +160,23 @@ class VCFReader(Reader):
 
         # if the file is not reading the header/metadata
         if not line_list[0].startswith("#"):  
-            try:  
-                # calculate the end position and add it to the end of the line list
-                
-                pos = int(line_list[1]) 
+            try:       
 
-                if not self.pos_only:            
-                    ref_len = len(line_list[3]) # length of REF
-                    end_pos = pos + ref_len - 1
-                else:
-                    info_col = line_list[7].split(';') # grab the INFO column
-                    end_pos = int(info_col[0].strip("END="))
+                pos = int(line_list[1]) 
+                ref_len = len(line_list[3])
+                end_pos = pos + ref_len - 1
+
+                ref = line_list[3][self.start_off:ref_len + self.end_off] # the refence sequence as a string, adjusted by the offsets
+                alt_raw = line_list[4].split(",") # returns a list of all alt alleles
+                alt = [alt[self.start_off:len(alt) + self.end_off] for alt in alt_raw]
 
                 # set specific data to their own parameters for better accessibility
                 self.pos_info = {                       
                     "chrom": line_list[0],               
                     "start": pos + self.start_off,      
                     "end": end_pos + self.end_off}      
-                self.ref = line_list[3] # the refence sequence as a string            
-                self.alt = line_list[4].split(",") # returns a list of all alt alleles
+                self.ref = ref       
+                self.alt = alt
                     
             except ValueError:
                 raise VCFFormatError(f"Failed to set position '{line_list[4]}' from line: {line_list}\n")
@@ -224,6 +230,9 @@ class BEDReader(Reader):
 
 
         return line_list
+    
+    def read(self, format_method = None):
+        return super().read(format_method or self.formatLine)
 
 
 
