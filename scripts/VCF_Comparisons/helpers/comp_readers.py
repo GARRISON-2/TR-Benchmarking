@@ -43,6 +43,7 @@ class SC_VCFReader(VCFReader):
                     "end": end_pos + self.end_off}      
                 self.ref = None       
                 self.alt = [None]
+                self.info = info_col
                     
             except ValueError:
                 raise VCFFormatError(f"Failed to set position '{line_list[4]}' from line: {line_list}\n")

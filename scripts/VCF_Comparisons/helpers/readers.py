@@ -38,7 +38,7 @@ class Reader:
         # try to move to the next file as long is it is not already at the end or paused 
         if not self.end_state:
             try:
-                line_string = self.file_obj.readline() # readline allows the ability to save positions in the file, as opposed to read()
+                line_string = self.file_obj.readline()
             
                 # if the line is not empty (ie. the end of the file has not been reached) 
                 if line_string:
@@ -52,21 +52,27 @@ class Reader:
                     self.end_state = True
                     self.prev_line = self.cur_line
                     self.cur_line = None
-                    self.close_file()
+                    #self.close_file()
 
                 return True
-            
-            
+                     
             except gzip.BadGzipFile:
                 raise FileReadError(f"Failed to read from {self.path}\nInvalid .gz")
             except UnicodeError:
                 raise FileReadError(f"Failed to read from {self.path}\nContains Invalid UTF-8 Characters")
+            except Exception as e:
+                raise FileReadError(f"Failed to read from {self.path}\n Unknown Error {e}")
 
 
-        
         return False
         #raise FileReadError(f"Failed to read from {self.path}\nFile has reached end state.")
 
+
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        return self.read(self.formatLine())
 
     def __enter__(self):
         return self.open_file()
@@ -90,6 +96,7 @@ class VCFReader(Reader):
         self.pos_info = None
         self.ref = None
         self.alt = None
+        self.info = None
         
 
 
@@ -162,9 +169,14 @@ class VCFReader(Reader):
         if not line_list[0].startswith("#"):  
             try:       
 
-                pos = int(line_list[1]) 
-                ref_len = len(line_list[3])
-                end_pos = pos + ref_len - 1
+                pos = int(line_list[1])
+                ref_len = len(line_list[3])                
+                info_col = line_list[7].split(';') # grab the INFO column
+                end_str = info_col[0].strip("END=")
+                if end_str.isdigit():
+                    end_pos = int(end_str)
+                else:
+                    end_pos = pos + ref_len - 1
 
                 ref = line_list[3][self.start_off:ref_len + self.end_off] # the refence sequence as a string, adjusted by the offsets
                 alt_raw = line_list[4].split(",") # returns a list of all alt alleles
@@ -177,6 +189,7 @@ class VCFReader(Reader):
                     "end": end_pos + self.end_off}      
                 self.ref = ref       
                 self.alt = alt
+                self.info = line_list[7].split(';')
                     
             except ValueError:
                 raise VCFFormatError(f"Failed to set position '{line_list[4]}' from line: {line_list}\n")

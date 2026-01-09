@@ -8,6 +8,9 @@ def compareString(str1, str2, method="lv"):
     if (str1 and set(str1).issubset(allowed)) and (str2 and set(str2).issubset(allowed)):
         if method == "lv":
             return lv.distance(str1, str2)
+        
+        if method == "len":
+            return len(str1) - len(str2)
     
     else:
         return None
