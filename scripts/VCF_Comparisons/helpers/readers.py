@@ -10,7 +10,9 @@ class Reader:
         self.buffer = buffer_size
         self.path = file_path
         self.end_state = False # whether or not the end of the file has been reached
-        self.cur_line = None
+        self.raw_line = None
+        self.cur_line = None # will be the same as raw_line if no format function is provided to read()
+        self.cur_loc = 0
 
 
     def close_file(self):
@@ -32,29 +34,29 @@ class Reader:
         
 
     '''
-    Returns True if the Line was read, and False otherwise
     '''
     def read(self, format = None):
         # try to move to the next file as long is it is not already at the end or paused 
         if not self.end_state:
             try:
-                line_string = self.file_obj.readline()
+                self.raw_line = self.file_obj.readline()
+                self.cur_loc = self.file_obj.tell()
             
                 # if the line is not empty (ie. the end of the file has not been reached) 
-                if line_string:
+                if self.raw_line:
                     self.prev_line = self.cur_line
                     if format is not None:
                         # then format and set the current line
-                        self.cur_line = format(line_string)
+                        self.cur_line = format(self.raw_line)
                     else:
-                        self.cur_line = line_string
+                        self.cur_line = self.raw_line
                 else: 
                     self.end_state = True
                     self.prev_line = self.cur_line
                     self.cur_line = None
                     #self.close_file()
 
-                return True
+                return self.cur_line
                      
             except gzip.BadGzipFile:
                 raise FileReadError(f"Failed to read from {self.path}\nInvalid .gz")
@@ -64,7 +66,7 @@ class Reader:
                 raise FileReadError(f"Failed to read from {self.path}\n Unknown Error {e}")
 
 
-        return False
+        return None
         #raise FileReadError(f"Failed to read from {self.path}\nFile has reached end state.")
 
 
@@ -72,7 +74,12 @@ class Reader:
         return self
     
     def __next__(self):
-        return self.read(self.formatLine())
+        line = self.read(self.formatLine())
+
+        if not line:
+            return StopIteration
+
+        return line
 
     def __enter__(self):
         return self.open_file()
@@ -93,12 +100,16 @@ class VCFReader(Reader):
         self.prev_line = None
         self.header_end = None
 
-        self.pos_info = None
+        self.chrom = None
+        self.pos = None
+        self.end_pos = None
+        self.id = None
         self.ref = None
         self.alt = None
+        self.qual = None
+        self.filter = None
         self.info = None
         
-
 
     '''
     
@@ -134,8 +145,8 @@ class VCFReader(Reader):
     '''
     def skipMetaData(self): 
         # loop while the current line contains meta data
-        while self.cur_line[0].startswith("#") and not self.end_state:
-            if self.cur_line[0].upper().startswith("#CHR"):
+        while self.raw_line.startswith("#") and not self.end_state:
+            if self.raw_line.upper().startswith("#CHR"):
                 break
             else:
                 self.read()  
@@ -144,6 +155,9 @@ class VCFReader(Reader):
         self.header_end = self.file_obj.tell()
 
 
+    '''
+    
+    '''
     def read(self, format_method = None):
         return super().read(format_method or self.formatLine)
 
@@ -183,12 +197,14 @@ class VCFReader(Reader):
                 alt = [alt[self.start_off:len(alt) + self.end_off] for alt in alt_raw]
 
                 # set specific data to their own parameters for better accessibility
-                self.pos_info = {                       
-                    "chrom": line_list[0],               
-                    "start": pos + self.start_off,      
-                    "end": end_pos + self.end_off}      
+                self.chrom = line_list[0]             
+                self.pos =  pos + self.start_off   
+                self.end_pos = end_pos + self.end_off
+                self.id = line_list[2]
                 self.ref = ref       
                 self.alt = alt
+                self.qual = line_list[5] 
+                self.filter = line_list[6] 
                 self.info = line_list[7].split(';')
                     
             except ValueError:
@@ -202,6 +218,7 @@ class VCFReader(Reader):
 
         return line_list
         
+
     '''
     
     '''
@@ -222,16 +239,10 @@ class BEDReader(Reader):
         line_list = ls.strip().split("\t")
 
         try:
-            # calculate the end position and add it to the end of the row list
-            pos = int(line_list[1])
-            end_pos = int(line_list[2])
-            line_list.append(end_pos)
-
-            # set position information parameter for easier access
-            self.pos_info = {          # eg:
-                    "chrom": line_list[0],   # CHROM1 
-                    "start": pos,            # 10002
-                    "end": end_pos}          # 10222
+            # set position information parameters for easier access
+            self.chrom = line_list[0]             
+            self.pos =  int(line_list[1]) 
+            self.end_pos = int(line_list[2])
             self.ref = line_list[3]
 
         except ValueError:
@@ -246,6 +257,14 @@ class BEDReader(Reader):
     
     def read(self, format_method = None):
         return super().read(format_method or self.formatLine)
+    
+    def skipMetaData(self): 
+        # loop while the current line contains meta data
+        while self.raw_line.startswith("#") and not self.end_state:
+            if self.raw_line.upper().startswith("#CHR"):
+                break
+            else:
+                self.read()  
 
 
 

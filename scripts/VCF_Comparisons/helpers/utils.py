@@ -1,5 +1,6 @@
 import Levenshtein as lv
-
+import sys
+from helpers.comp_readers import *
 
 def compareString(str1, str2, method="lv"):
     allowed = {'A', 'T', 'C', 'G'}
@@ -49,14 +50,45 @@ def compareGt(gt1, gt2):
 	# returns the sum of the differences between alleles, as well as the individual differences
     return best_sum, NoneToNA(best_dist[0]), NoneToNA(best_dist[1])
 
-'''
-def compareGCContent(str1, str2):
-    str1_gc = [count for count in str1[]]
-    str2_gc = [count for count in str2[]]
 
-    return str1_gc - str2_gc
-''' 
+def getFileName(path_str):
+    # enumerate through the reversed file path to grab
+    # the index of where the file name starts
+    for i, letter in enumerate(reversed(path_str)):
+        if letter == "\\":
+            name_start = len(path_str) - i
+            break
+
+    # slice for the file name minus the path and the format
+    return path_str[name_start:]#[name_start:-4]
 
 
 def stateCheck(rdr):
     return (not rdr.pause) and (not rdr.end_state)
+
+
+def setupVCFReader(vcf, stk, offset=[0,0], pos_only = False, skip_head = True):
+    try:
+        # create VCFReader object for file.
+        rdr = SC_VCFReader(file_path=vcf, 
+                     pos_only=pos_only,
+                     start_offset=offset[0], 
+                     end_offset=offset[1])
+
+
+        # add vcf to exit stack 
+        stk.enter_context(rdr)
+
+    except FileIOError as e:
+        sys.exit(f"\nERROR\nExiting program due to file error: {e}")
+
+
+    if skip_head:
+        # move past header data
+        rdr.skipMetaData()
+
+        # build first line's genotype and save it      
+        rdr.safeRead()
+        rdr.buildGt()
+
+    return rdr

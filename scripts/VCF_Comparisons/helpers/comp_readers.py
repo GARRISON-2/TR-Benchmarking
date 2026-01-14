@@ -10,17 +10,17 @@ class SC_VCFReader(VCFReader):
 
 
     def safeRead(self):
-        read_state = False
+        line = None
 
         try: 
             if not self.pause:  
                 format_method = self.formatLine if not self.pos_only else self.posOnlyFormat
-                read_state = super().read(format_method)   
-
+                line = super().read(format_method)  
+                 
         except (FileReadError, VCFFormatError, BEDFormatError) as e:
             sys.exit(f"\nERROR\n{e}")   
 
-        return read_state
+        return line
     
 
     def posOnlyFormat(self, ls):
@@ -37,10 +37,9 @@ class SC_VCFReader(VCFReader):
                 end_pos = int(info_col[0].strip("END="))
 
                 # set specific data to their own parameters for better accessibility
-                self.pos_info = {                       
-                    "chrom": line_list[0],               
-                    "start": pos + self.start_off,      
-                    "end": end_pos + self.end_off}      
+                self.chrom = line_list[0]             
+                self.pos = pos + self.start_off     
+                self.end_pos = end_pos + self.end_off   
                 self.ref = None       
                 self.alt = [None]
                 self.info = info_col
@@ -63,19 +62,19 @@ class SC_VCFReader(VCFReader):
             prev_chrom = self.prev_line[0]
 
             # ensure vcf is in order
-            if self.pos_info['chrom'] < prev_chrom:
+            if self.chrom < prev_chrom:
                 sys.exit(f"\nERROR\n{self.path} using unknown order. Ending program.")
 
 
-    def syncToBed(self, bp_info, order_method="ASCII"):
+    def syncToBed(self, bed, order_method="ASCII"):
         # check VCF chromosome ordering
         self.checkOrder(order_method)
 
         # Run Alingment Checks
-        chrom_match = (self.pos_info["chrom"] == bp_info["chrom"])
+        chrom_match = (self.chrom == bed.chrom)
 
         # if vcf position is behind the bed, or the vcf chrom is behind, loop until the vcf catches up         
-        while (((self.pos_info["end"] < bp_info["start"]) and chrom_match) or (self.pos_info["chrom"] < bp_info["chrom"])) \
+        while (((self.end_pos < bed.pos) and chrom_match) or (self.chrom < bed.chrom)) \
             and not self.end_state:
 
             # move the file line forward until it is no longer behind, or the end of the file is reached
@@ -86,8 +85,8 @@ class SC_VCFReader(VCFReader):
 
 
         # if vcf position is ahead of bed position range, or if the vcf chrom is ahead, then pause operations
-        if ((self.pos_info["start"] > bp_info["end"]) and chrom_match) or \
-            (self.pos_info["chrom"] > bp_info["chrom"]):
+        if ((self.pos > bed.end_pos) and chrom_match) or \
+            (self.chrom > bed.chrom):
 
             self.pause = True # pause vcf from being able to move to the next line or run comparisons
 
