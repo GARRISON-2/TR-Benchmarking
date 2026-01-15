@@ -84,7 +84,6 @@ class Reader:
     def __enter__(self):
         return self.open_file()
 
-
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close_file()
 
@@ -105,10 +104,11 @@ class VCFReader(Reader):
         self.end_pos = None
         self.id = None
         self.ref = None
-        self.alt = None
+        self.alt = []
         self.qual = None
         self.filter = None
         self.info = None
+        self.genotype = None
         
 
     '''
@@ -205,7 +205,7 @@ class VCFReader(Reader):
                 self.alt = alt
                 self.qual = line_list[5] 
                 self.filter = line_list[6] 
-                self.info = line_list[7].split(';')
+                self.info = line_list[7]
                     
             except ValueError:
                 raise VCFFormatError(f"Failed to set position '{line_list[4]}' from line: {line_list}\n")

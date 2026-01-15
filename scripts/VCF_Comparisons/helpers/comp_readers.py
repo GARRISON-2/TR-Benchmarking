@@ -1,27 +1,51 @@
 from helpers.readers import *
+from helpers.constants import *
 
-class SC_VCFReader(VCFReader):
-    def __init__(self, file_path, start_offset = 0, end_offset = 0, pos_only = False, pause = False, lines_skipped = 0):
+
+
+class COMP_VCFReader(VCFReader):
+    def __init__(self, file_path, start_offset = 0, end_offset = 0, pos_only = False, sc = None, pause = False):
         super().__init__(file_path, start_offset, end_offset)
         self.pause = pause
         self.pos_only = pos_only
-        self.is_data = False
-        self.skip_num = lines_skipped
+        self.skip_num = 0
+        self.spec_case = sc
 
 
-    def safeRead(self):
-        line = None
+    def checkOrder(self, order_method="ASCII"):
+        # check VCF Chromosome ordering
+        if not self.prev_line[0].startswith("#"):
+            prev_chrom = self.prev_line[0]
 
-        try: 
-            if not self.pause:  
-                format_method = self.formatLine if not self.pos_only else self.posOnlyFormat
-                line = super().read(format_method)  
-                 
-        except (FileReadError, VCFFormatError, BEDFormatError) as e:
-            sys.exit(f"\nERROR\n{e}")   
-
-        return line
+            # ensure vcf is in order
+            if self.chrom < prev_chrom and order_method == "ASCII":
+                raise VCFFormatError(f"\n{self.path} using unknown order.")
     
+
+    def constructAllele(self, idxs, mots):
+        allele = ""
+        for idx in idxs:
+            allele += mots[int(idx)]
+        
+        return allele
+
+
+    def constructAlt(self, info):
+        alt = []
+        mot_list = info[1].strip("RU=")
+
+        for i, str in enumerate(info):
+
+            if "ALTANNO_H1=" in str:
+                mot_idxs = info[i].strip("ALTANNO_H1=").split("-")
+                alt.append(self.constructAllele(mot_idxs, mot_list))
+
+            if "ALTANNO_H2=" in str:
+                mot_idxs= info[i].strip("ALTANNO_H2=").split("-")
+                alt.append(self.constructAllele(mot_idxs, mot_list))
+
+        return alt
+        
 
     def posOnlyFormat(self, ls):
         # split line string into list of strings
@@ -40,8 +64,11 @@ class SC_VCFReader(VCFReader):
                 self.chrom = line_list[0]             
                 self.pos = pos + self.start_off     
                 self.end_pos = end_pos + self.end_off   
-                self.ref = None       
-                self.alt = [None]
+                self.ref = None
+                if self.spec_case == SPECIAL_CASE.VAMOS:
+                    self.alt = self.constructAlt(info_col)
+                else:        
+                    self.alt = [None] # functions in super class expect alt to be a list
                 self.info = info_col
                     
             except ValueError:
@@ -56,19 +83,26 @@ class SC_VCFReader(VCFReader):
         return line_list
 
 
-    def checkOrder(self, order_method="ASCII"):
-        # check VCF Chromosome ordering
-        if not self.prev_line[0].startswith("#"):
-            prev_chrom = self.prev_line[0]
+    def safeRead(self):
+        line = None
 
-            # ensure vcf is in order
-            if self.chrom < prev_chrom:
-                sys.exit(f"\nERROR\n{self.path} using unknown order. Ending program.")
+        try: 
+            if not self.pause:  
+                format_method = self.posOnlyFormat if self.pos_only else self.formatLine
+                line = super().read(format_method)  
+                 
+        except (FileReadError, VCFFormatError, BEDFormatError) as e:
+            sys.exit(f"\nERROR\n{e}")   
+
+        return line
 
 
     def syncToBed(self, bed, order_method="ASCII"):
         # check VCF chromosome ordering
-        self.checkOrder(order_method)
+        try:
+            self.checkOrder(order_method)
+        except Exception as e:
+            sys.exit(f"\nERROR\n{e}\nEnding program.")
 
         # Run Alingment Checks
         chrom_match = (self.chrom == bed.chrom)

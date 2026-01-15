@@ -1,129 +1,143 @@
 import os
 import sys
 from contextlib import ExitStack
-from helpers.readers import *
-from helpers.comp_readers import *
+from helpers.readers import BEDReader
 from helpers.utils import *
-
-# set directory variables for easy file i/o while testing
-PROJ_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_DIR = os.path.join(PROJ_ROOT, 'local_data')
-LOCAL = os.path.join(PROJ_ROOT, 'scripts\\VCF_Comparisons')
-#LOCAL = os.path.join(PROJ_ROOT, 'local_data')
+from helpers.constants import *
 
 
 
 def mainloop():
-    bed_file = "test-isolated-vc-catalog.atarva.bed.gz"
-    
-    vcf_list = [ # the file name, and the offset amount (eg. [-1, 0] for 1 based inclusive), and bool for whether is is position only
-        [os.path.join(DATA_DIR, "HG001.PAW79146.haplotagged.URfix.atarva.vcf"), [0, 0], False], 
-        [os.path.join(DATA_DIR, "HG001.PAW79146.haplotagged.strdust.sorted.vcf"), [0,0], False],
-        [os.path.join(DATA_DIR, "HG001.PAW79146.haplotagged.URfix.longTR.sorted.vcf"), [0,0], False],
-        [os.path.join(DATA_DIR, "HG001.PAW79146.haplotagged.URfix.straglr.vcf"), [0,0], True],
-        [os.path.join(DATA_DIR, "HG001.PAW79146.haplotagged.URfix.vamos.vcf"), [0,0], True],
-        [os.path.join(DATA_DIR, "HG001.PAW79146.haplotagged.URfix.strkit.vcf"), [0,0], False],
-        [os.path.join(DATA_DIR, "medaka_to_ref.TR.sorted.vcf"), [0,0], False]
+    bed_path = os.path.join(DATA_DIR, "BED_files\\test-isolated-vc-catalog.atarva.bed.gz")
+
+    '''    # vcf_list = []
+    # with os.scandir(DATA_DIR) as dir_entries:
+    #     for entry in dir_entries:
+    #         if entry.is_file():
+    #             if entry.path.endswith(".vcf") or entry.path.endswith(".vcf.gz"):
+    #                 vcf_list.append([entry.path, [0,0], False])
+    '''
+
+    '''
+    # or can manually set the list using this format: 
+    # the file name, the offset amount (eg. [-1, 0] for 1 based inclusive), and bool for whether the vcf is position only
+    # vcf_list = [ 
+    #     ["fileq.vcf", [0, 0], False], 
+    #     ["file2.vcf", [0, 1], True],
+    #     ]
+    '''
+
+    vcf_list = [ # the file name, and the offset amount (eg. [-1, 0] for 1 based inclusive), and whether it needs special parsing parameters
+        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.atarva.vcf"), [0, 0], None], 
+        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.strdust.sorted.vcf"), [0,0], None],
+        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.longTR.sorted.vcf"), [0,0], None],
+        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.straglr.vcf"), [0,0], None],
+        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.vamos.vcf"), [0,0], SPECIAL_CASE.VAMOS],
+        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.strkit.vcf"), [0,0], None],
+        [os.path.join(OUTPUT_DIR, "other_VCFs\\medaka_to_ref.TR.sorted.vcf"), [0,0], None]
        # ["test_cases.vcf", [0,0], False]
         ]
 
 
-
-    
     with ExitStack() as stack: 
         vcf_rdrs = []
-        # output strings
-        header_start = f"#CHROM\tSTART\tEND"
-        bof_header = ""
-        ps_header = ""
-        gt_header = ""
 
         # create bed reader and enter the file into the stack, putting it under control of the with statement
-        bed = stack.enter_context(BEDReader(os.path.join(DATA_DIR, bed_file)))
+        bed = stack.enter_context(BEDReader(bed_path))
         bed.skipMetaData()
 
         # create list of vcf reader objects
         for i, vcf_info in enumerate(vcf_list):
             vcf_rdrs.append(setupVCFReader(vcf=vcf_info[0], 
                                            offset=vcf_info[1], 
-                                           pos_only=vcf_info[2],
+                                           sc=vcf_info[2],
                                            stk=stack))
-
+            
+            # build first line's genotype and save it      
+            vcf_rdrs[i].safeRead()
+            vcf_rdrs[i].buildGt()
 
 
         # open output files and put it into the exit stack
-        bof = stack.enter_context(open(os.path.join(DATA_DIR, "bed-comp.tsv"), "w")) 
-        vof = stack.enter_context(open(os.path.join(DATA_DIR, "vcf-comp.tsv"), "w"))
+        bdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "bed-comp.tsv"), "w")) 
+        pdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "pos-comp.tsv"), "w"))
+        lvdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "lev-comp.tsv"), "w"))
+        ldof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "len-comp.tsv"), "w"))
         
 
-        # Write metadata to output file
-        for i, rdr in enumerate(vcf_rdrs):
-            file_name = getFileName(vcf_rdrs[i].path)
-
-            bof.write(f"##FILE_{i}=<Name={file_name}>\n")
-            vof.write(f"##FILE_{i}=<Name={file_name}>\n")
-
-
-
-        # Configure headers for output files
-        for i in range(len(vcf_rdrs)):
-            for j in range(i+1, len(vcf_rdrs)):
-                ps_header += f"\tPSDIST_START_{i}-{j}\tPSDIST_END_{i}-{j}"
-                gt_header += f"\tLVDIST_ALL1_{i}-{j}\tLVDIST_ALL2_{i}-{j}"
-            bof_header += f"\tBDDIST_START_{i}\tBDDIST_END_{i}"
-        bof.write(header_start + bof_header + "\n")
-        vof.write(header_start + ps_header + gt_header + "\n")
+        bdof_meta, pdof_meta, lvdof_meta, ldof_meta = setupMetadata(vcf_rdrs)
+        bdof.write(bdof_meta)
+        pdof.write(pdof_meta)
+        lvdof.write(lvdof_meta)
+        ldof.write(ldof_meta)
+        
 
 
         # Main Operations loop       
         while not bed.end_state: # loop until the bed file has reached its end
-            bof_out_str = f"{bed.chrom}\t{bed.pos}\t{bed.end_pos}"
-            vof_out_str = f"{bed.chrom}\t{bed.pos}\t{bed.end_pos}"
-            gtd_sub_str = ""
-            psd_sub_str = ""
-
+            bed_pos_str = f"{bed.chrom}\t{bed.pos}\t{bed.end_pos}"
+            bdof_out_str = bed_pos_str
+            pdof_out_str = bed_pos_str
+            lvdof_out_str = bed_pos_str
+            ldof_out_str = bed_pos_str
 
             # cycle through all vcf files and ensure they are synced to the bed
             [reader.syncToBed(bed) for reader in vcf_rdrs]
                                       
+
 
             # Run comparisons on each VCF
             for i, reader in enumerate(vcf_rdrs):
 
                 # VCF-BED Comparisons
                 if reader.pause or reader.end_state: # if the vcf skipped the current line or has ended
-                    bof_out_str += "\tNA\tNA"
+                    bdof_out_str += "\tNA\tNA"
                 else:
-                    # POSDIST: compre vcf ref position with bed
+                    # BDDIST: compre vcf ref position with bed
                     start_diff = reader.pos - bed.pos
                     end_diff = reader.end_pos - bed.end_pos
                     
                     if start_diff > 500 or end_diff > 500:
                         print(f"WARNING: Large Positional difference at {bed.pos} from {reader.path}")
 
-                    bof_out_str += f"\t{start_diff}\t{end_diff}"
+                    bdof_out_str += f"\t{start_diff}\t{end_diff}"
 
 
                 # VCF-VCF Comparisons
                 for other_reader in vcf_rdrs[i+1:]:
                     # if both readers are not paused or ended
                     if stateCheck(reader) and stateCheck(other_reader):
-                        # LVDIST: calculate levenshtein distance of genotypes
-                        gt_diff, a1_diff, a2_diff = compareGt(reader.genotype, other_reader.genotype)
-                        gtd_sub_str += f"\t{a1_diff}\t{a2_diff}"
+                        # LVDIST: calculate levenshtein distance of alleles between vcf files
+                        gt_lvdiff, a1_lvdiff, a2_lvdiff, order = compareGt(reader.genotype, 
+                                                                    other_reader.genotype)
+                        lvdof_out_str += f"\t{a1_lvdiff}\t{a2_lvdiff}"
                     
+                        # LENDIST: calculate difference in allele lengths between vcf files
+                        gt_ldiff, a1_ldiff, a2_ldiff, order = compareGt(reader.genotype, 
+                                                                 other_reader.genotype, 
+                                                                 comp_method=COMP_METHOD.LENGTH,
+                                                                 comp_ord=order)
+                        ldof_out_str += f"\t{a1_ldiff}\t{a2_ldiff}"
+
+                        if a1_ldiff > a1_lvdiff or a2_ldiff > a2_lvdiff:
+                            raise Exception("\nFATAL PROGRAM ERROR\nLength difference between strings greater than Levenshtein distance.")
+
                         # POSDIST: calculate difference in positions between vcf files
                         vcf_start_diff = reader.pos - other_reader.pos
                         vcf_end_diff = reader.end_pos - other_reader.end_pos
-                        psd_sub_str += f"\t{vcf_start_diff}\t{vcf_end_diff}"
+                        pdof_out_str += f"\t{vcf_start_diff}\t{vcf_end_diff}"
+
                     else:
-                        gtd_sub_str += "\tNA\tNA"
-                        psd_sub_str += "\tNA\tNA"
+                        lvdof_out_str += "\tNA\tNA"
+                        ldof_out_str += "\tNA\tNA"
+                        pdof_out_str += "\tNA\tNA"
 
 
             # write data to output files
-            bof.write(bof_out_str + "\n")   
-            vof.write(vof_out_str + psd_sub_str + gtd_sub_str + "\n")
+            bdof.write(bdof_out_str + "\n")   
+            pdof.write(pdof_out_str + "\n")
+            lvdof.write(lvdof_out_str + "\n")   
+            ldof.write(ldof_out_str + "\n")
 
 
             # read lines for all files
