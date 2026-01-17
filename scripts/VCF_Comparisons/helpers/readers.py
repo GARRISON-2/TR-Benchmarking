@@ -5,19 +5,26 @@ import io
 '''
 '''
 class Reader:
-    def __init__(self, file_path, buffer_size = io.DEFAULT_BUFFER_SIZE):
+    def __init__(self, file_path: str, buffer_size = io.DEFAULT_BUFFER_SIZE):
         self.file_obj = None
         self.buffer = buffer_size
         self.path = file_path
         self.end_state = False # whether or not the end of the file has been reached
-        self.raw_line = None
+        self._raw_line = None
         self.cur_line = None # will be the same as raw_line if no format function is provided to read()
-        self.cur_loc = 0
+        self.cur_loc = None
+
+
+    @property
+    def raw_line(self):
+        return self._raw_line
 
 
     def close_file(self):
-        if not self.file_obj.closed:
+        if not self.file_obj: # if file was opened
             self.file_obj.close()
+
+        self.cur_loc = None
 
 
     def open_file(self):
@@ -26,48 +33,42 @@ class Reader:
                 self.file_obj = gzip.open(self.path, "rt", encoding="utf-8")
             else:
                 self.file_obj = open(self.path, "r", encoding="utf-8", buffering=self.buffer)
- 
-            self.read() # move to the first line in the file
+
+            self.cur_loc = 0
             return self
         except (IOError, OSError) as e: 
             raise FileIOError(f"File Opening Error: {e}")
-        
+
 
     '''
     '''
     def read(self, format = None):
-        # try to move to the next file as long is it is not already at the end or paused 
-        if not self.end_state:
-            try:
-                self.raw_line = self.file_obj.readline()
-                self.cur_loc = self.file_obj.tell()
-            
-                # if the line is not empty (ie. the end of the file has not been reached) 
-                if self.raw_line:
-                    self.prev_line = self.cur_line
-                    if format is not None:
-                        # then format and set the current line
-                        self.cur_line = format(self.raw_line)
-                    else:
-                        self.cur_line = self.raw_line
-                else: 
-                    self.end_state = True
-                    self.prev_line = self.cur_line
-                    self.cur_line = None
-                    #self.close_file()
+        try:
+            self._raw_line = self.file_obj.readline()
+            self.cur_loc = self.file_obj.tell()
 
-                return self.cur_line
-                     
-            except gzip.BadGzipFile:
-                raise FileReadError(f"Failed to read from {self.path}\nInvalid .gz")
-            except UnicodeError:
-                raise FileReadError(f"Failed to read from {self.path}\nContains Invalid UTF-8 Characters")
-            except Exception as e:
-                raise FileReadError(f"Failed to read from {self.path}\n Unknown Error {e}")
+            # if the line is not empty (ie. the end of the file has not been reached) 
+            if self._raw_line:
+                self.prev_line = self.cur_line
+                if format is not None:
+                    # then format and set the current line
+                    self.cur_line = format(self._raw_line)
+                else:
+                    self.cur_line = self._raw_line
+            else: 
+                self.end_state = True
+                self.prev_line = self.cur_line
+                self.cur_line = self._raw_line
 
+            return self.cur_line
+                    
+        except gzip.BadGzipFile:
+            raise FileReadError(f"Failed to read from {self.path}\nInvalid .gz")
+        except UnicodeError:
+            raise FileReadError(f"Failed to read from {self.path}\nContains Invalid UTF-8 Characters")
+        except Exception as e:
+            raise FileReadError(f"Failed to read from {self.path}\n Unknown Error {e}")
 
-        return None
-        #raise FileReadError(f"Failed to read from {self.path}\nFile has reached end state.")
 
 
     def __iter__(self):
@@ -92,7 +93,7 @@ class Reader:
 '''
 '''
 class VCFReader(Reader):
-    def __init__(self, file_path, start_offset = 0, end_offset = 0):
+    def __init__(self, file_path: str, start_offset = 0, end_offset = 0):
         super().__init__(file_path)
         self.start_off = start_offset
         self.end_off = end_offset
@@ -104,7 +105,7 @@ class VCFReader(Reader):
         self.end_pos = None
         self.id = None
         self.ref = None
-        self.alt = []
+        self.alt = None
         self.qual = None
         self.filter = None
         self.info = None
@@ -114,11 +115,18 @@ class VCFReader(Reader):
     '''
     
     '''
-    def buildGt(self, sample_col=9):
+    def buildGt(self, sample_col=9, ref=None, alt = None):
         try:
+            # use class parameters unless otherwise specified
+            ref = self.ref if not ref else ref
+            alt = self.alt if not alt else alt
+            
+            # split line into list for easy data grabbing
+            ls = self._raw_line.strip().split("\t")
+
             # grab genotype indices from current line
-            sample_str = self.cur_line[sample_col]
-            idx_str = sample_str.split(':')[0] # splits sample column by ':' and grabs genotype index from start
+            sample_str = ls[sample_col]
+            idx_str = sample_str.split(':')[0] # splits sample column and grabs genotype index from start
             choices = [self.ref, *self.alt, None] # list of possible choices to use for constructing genotype
             gt = []
 
@@ -145,8 +153,8 @@ class VCFReader(Reader):
     '''
     def skipMetaData(self): 
         # loop while the current line contains meta data
-        while self.raw_line.startswith("#") and not self.end_state:
-            if self.raw_line.upper().startswith("#CHR"):
+        while self._raw_line.startswith("#") and not self.end_state:
+            if self._raw_line.upper().startswith("#CHR"):
                 break
             else:
                 self.read()  
@@ -175,7 +183,7 @@ class VCFReader(Reader):
     '''
     
     '''
-    def formatLine(self, ls):
+    def formatLine(self, ls: str):
         # split line string into list of strings
         line_list = ls.strip().split("\t")
 
@@ -186,7 +194,7 @@ class VCFReader(Reader):
                 pos = int(line_list[1])
                 ref_len = len(line_list[3])                
                 info_col = line_list[7].split(';') # grab the INFO column
-                end_str = info_col[0].strip("END=")
+                end_str = info_col[0].removeprefix("END=")
                 if end_str.isdigit():
                     end_pos = int(end_str)
                 else:
@@ -222,19 +230,19 @@ class VCFReader(Reader):
     '''
     
     '''
-    def _setFilePosition(self, file_pos):
+    def _setFilePosition(self, file_pos: int):
         self.file_obj.seek(file_pos)
 
              
 
 
 class BEDReader(Reader):
-    def __init__(self, file_path):
+    def __init__(self, file_path: str):
         super().__init__(file_path)
         self.prev_line = None
 
    
-    def formatLine(self, ls):
+    def formatLine(self, ls: str):
         # split line string into list
         line_list = ls.strip().split("\t")
 
@@ -260,8 +268,11 @@ class BEDReader(Reader):
     
     def skipMetaData(self): 
         # loop while the current line contains meta data
-        while self.raw_line.startswith("#") and not self.end_state:
-            if self.raw_line.upper().startswith("#CHR"):
+        if self._raw_line is None:
+            self.read()
+
+        while self._raw_line.startswith("#") and not self.end_state:
+            if self._raw_line.upper().startswith("#CHR"):
                 break
             else:
                 self.read()  

@@ -14,7 +14,7 @@ class COMP_VCFReader(VCFReader):
 
     def checkOrder(self, order_method="ASCII"):
         # check VCF Chromosome ordering
-        if not self.prev_line[0].startswith("#"):
+        if self.prev_line and not self.prev_line[0].startswith("#"):
             prev_chrom = self.prev_line[0]
 
             # ensure vcf is in order
@@ -22,7 +22,7 @@ class COMP_VCFReader(VCFReader):
                 raise VCFFormatError(f"\n{self.path} using unknown order.")
     
 
-    def constructAllele(self, idxs, mots):
+    def constructAllele(self, idxs: list, mots: list):
         allele = ""
         for idx in idxs:
             allele += mots[int(idx)]
@@ -30,24 +30,25 @@ class COMP_VCFReader(VCFReader):
         return allele
 
 
-    def constructAlt(self, info):
+    def constructAlt(self, info: str):
         alt = []
-        mot_list = info[1].strip("RU=")
 
-        for i, str in enumerate(info):
+        for i, str in enumerate(info): # loop over infor and grab data for constructing allele sequence        
+            if "RU" in str:
+                mot_list = info[i].removeprefix("RU=").split(",")
 
-            if "ALTANNO_H1=" in str:
-                mot_idxs = info[i].strip("ALTANNO_H1=").split("-")
+            if "ALTANNO_H1" in str:
+                mot_idxs = info[i].removeprefix("ALTANNO_H1=").split("-")
                 alt.append(self.constructAllele(mot_idxs, mot_list))
 
-            if "ALTANNO_H2=" in str:
-                mot_idxs= info[i].strip("ALTANNO_H2=").split("-")
+            if "ALTANNO_H2" in str:
+                mot_idxs = info[i].removeprefix("ALTANNO_H2=").split("-")
                 alt.append(self.constructAllele(mot_idxs, mot_list))
 
         return alt
         
 
-    def posOnlyFormat(self, ls):
+    def posOnlyFormat(self, ls: str):
         # split line string into list of strings
         line_list = ls.strip().split("\t")
 
@@ -58,7 +59,7 @@ class COMP_VCFReader(VCFReader):
                 pos = int(line_list[1]) 
 
                 info_col = line_list[7].split(';') # grab the INFO column
-                end_pos = int(info_col[0].strip("END="))
+                end_pos = int(info_col[0].removeprefix("END="))
 
                 # set specific data to their own parameters for better accessibility
                 self.chrom = line_list[0]             
@@ -71,9 +72,7 @@ class COMP_VCFReader(VCFReader):
                     self.alt = [None] # functions in super class expect alt to be a list
                 self.info = info_col
                     
-            except ValueError:
-                raise VCFFormatError(f"Failed to set position '{line_list[4]}' from line: {line_list}\n")
-            
+
             except IndexError:
                 raise VCFFormatError(f"Missing parameter data from line: {line_list}")
             
@@ -97,7 +96,7 @@ class COMP_VCFReader(VCFReader):
         return line
 
 
-    def syncToBed(self, bed, order_method="ASCII"):
+    def syncToBed(self, bed: BEDReader, order_method="ASCII"):
         # check VCF chromosome ordering
         try:
             self.checkOrder(order_method)

@@ -1,5 +1,5 @@
 import os
-import sys
+import time
 from contextlib import ExitStack
 from helpers.readers import BEDReader
 from helpers.utils import *
@@ -8,7 +8,7 @@ from helpers.constants import *
 
 
 def mainloop():
-    bed_path = os.path.join(DATA_DIR, "BED_files\\test-isolated-vc-catalog.atarva.bed.gz")
+    bed_path = os.path.join(DATA_DIR, "BED_files\\benchmark-catalog-v2.vamos.bed")
 
     '''    # vcf_list = []
     # with os.scandir(DATA_DIR) as dir_entries:
@@ -28,13 +28,13 @@ def mainloop():
     '''
 
     vcf_list = [ # the file name, and the offset amount (eg. [-1, 0] for 1 based inclusive), and whether it needs special parsing parameters
-        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.atarva.vcf"), [0, 0], None], 
-        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.strdust.sorted.vcf"), [0,0], None],
-        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.longTR.sorted.vcf"), [0,0], None],
-        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.straglr.vcf"), [0,0], None],
-        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.vamos.vcf"), [0,0], SPECIAL_CASE.VAMOS],
-        [os.path.join(DATA_DIR, "HG001.PAW79146\\HG001.PAW79146.haplotagged.URfix.strkit.vcf"), [0,0], None],
-        [os.path.join(OUTPUT_DIR, "other_VCFs\\medaka_to_ref.TR.sorted.vcf"), [0,0], None]
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.atarva.sorted.vcf"), [0, 0], None], 
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.strdust.sorted.vcf"), [0,0], None],
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.longTR.sorted.vcf"), [0,0], None],
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.straglr.sorted.vcf"), [0,0], None],
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.vamos.sorted.vcf"), [0,0], SPECIAL_CASE.VAMOS],
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.strkit.sorted.vcf"), [0,0], None],
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.medaka_to_ref.TR.sorted.vcf"), [0,0], None]
        # ["test_cases.vcf", [0,0], False]
         ]
 
@@ -44,6 +44,7 @@ def mainloop():
 
         # create bed reader and enter the file into the stack, putting it under control of the with statement
         bed = stack.enter_context(BEDReader(bed_path))
+        bed.read()
         bed.skipMetaData()
 
         # create list of vcf reader objects
@@ -72,20 +73,25 @@ def mainloop():
         ldof.write(ldof_meta)
         
 
+        str_time = time.perf_counter()
+
 
         # Main Operations loop       
-        while not bed.end_state: # loop until the bed file has reached its end
+        while bed.cur_line: # loop until BED file reaches end
             bed_pos_str = f"{bed.chrom}\t{bed.pos}\t{bed.end_pos}"
             bdof_out_str = bed_pos_str
             pdof_out_str = bed_pos_str
             lvdof_out_str = bed_pos_str
             ldof_out_str = bed_pos_str
 
+
+            if bed.prev_line is None or bed.chrom != bed.prev_line[0]:
+                print(f"Comparing {bed.chrom}")
+
+
             # cycle through all vcf files and ensure they are synced to the bed
             [reader.syncToBed(bed) for reader in vcf_rdrs]
                                       
-
-
             # Run comparisons on each VCF
             for i, reader in enumerate(vcf_rdrs):
 
@@ -94,8 +100,8 @@ def mainloop():
                     bdof_out_str += "\tNA\tNA"
                 else:
                     # BDDIST: compre vcf ref position with bed
-                    start_diff = reader.pos - bed.pos
-                    end_diff = reader.end_pos - bed.end_pos
+                    start_diff = bed.pos - reader.pos
+                    end_diff = bed.end_pos - reader.end_pos
                     
                     if start_diff > 500 or end_diff > 500:
                         print(f"WARNING: Large Positional difference at {bed.pos} from {reader.path}")
@@ -162,7 +168,12 @@ def mainloop():
             print(f"\nWARNING: {rdr.skip_num} lines skipped in {rdr.path}")
 
 
+    end_time = time.perf_counter()
+    comp_time = end_time - str_time
+
+
     print("\n\n---PROGRAM COMPLETE---\n")
+    print(f"Comparison time: {round(comp_time, 4)}")
 
 
 
