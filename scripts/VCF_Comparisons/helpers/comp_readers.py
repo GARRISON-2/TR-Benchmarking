@@ -1,3 +1,4 @@
+import sys
 from helpers.readers import *
 from helpers.constants import *
 
@@ -5,10 +6,13 @@ from helpers.constants import *
 
 class COMP_VCFReader(VCFReader):
     def __init__(self, file_path, start_offset = 0, end_offset = 0, pos_only = False, sc = None, pause = False):
-        super().__init__(file_path, start_offset, end_offset)
+        super().__init__(file_path)
+        self.start_off = start_offset
+        self.end_off = end_offset
         self.pause = pause
         self.pos_only = pos_only
         self.skip_num = 0
+        self.end_state = False
         self.spec_case = sc
 
 
@@ -69,7 +73,7 @@ class COMP_VCFReader(VCFReader):
                 if self.spec_case == SPECIAL_CASE.VAMOS:
                     self.alt = self.constructAlt(info_col)
                 else:        
-                    self.alt = [None] # functions in super class expect alt to be a list
+                    self.alt = [None] # functions in super class expect alt to be a list                 
                 self.info = info_col
                     
 
@@ -82,6 +86,17 @@ class COMP_VCFReader(VCFReader):
         return line_list
 
 
+    def formatLine(self, ls):
+        fl = super().formatLine(ls)
+
+        # if the vals have been set already
+        if self.pos and self.end_pos:
+            self.pos += self.start_off
+            self.end_pos += self.end_off
+
+        return fl
+
+
     def safeRead(self):
         line = None
 
@@ -89,6 +104,9 @@ class COMP_VCFReader(VCFReader):
             if not self.pause:  
                 format_method = self.posOnlyFormat if self.pos_only else self.formatLine
                 line = super().read(format_method)  
+
+                if not line: 
+                    self.end_state = True
                  
         except (FileReadError, VCFFormatError, BEDFormatError) as e:
             sys.exit(f"\nERROR\n{e}")   

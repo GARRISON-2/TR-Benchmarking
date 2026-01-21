@@ -18,36 +18,28 @@ def mainloop():
     #                 vcf_list.append([entry.path, [0,0], False])
     '''
 
-    '''
-    # or can manually set the list using this format: 
-    # the file name, the offset amount (eg. [-1, 0] for 1 based inclusive), and bool for whether the vcf is position only
-    # vcf_list = [ 
-    #     ["fileq.vcf", [0, 0], False], 
-    #     ["file2.vcf", [0, 1], True],
-    #     ]
-    '''
-
-    vcf_list = [ # the file name, and the offset amount (eg. [-1, 0] for 1 based inclusive), and whether it needs special parsing parameters
+          
+    vcf_list = [
+        # the file name, the offset amount (eg. [-1, 0] for 1 based inclusive), and whether it needs special parsing parameters    
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.atarva.sorted.vcf"), [0, 0], None], 
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.strdust.sorted.vcf"), [0,0], None],
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.longTR.sorted.vcf"), [0,0], None],
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.straglr.sorted.vcf"), [0,0], None],
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.straglr.sorted.vcf"), [0,0], SPECIAL_CASE.STRAGLR],
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.vamos.sorted.vcf"), [0,0], SPECIAL_CASE.VAMOS],
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.strkit.sorted.vcf"), [0,0], None],
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.medaka_to_ref.TR.sorted.vcf"), [0,0], None]
-       # ["test_cases.vcf", [0,0], False]
         ]
 
 
     with ExitStack() as stack: 
         vcf_rdrs = []
 
-        # create bed reader and enter the file into the stack, putting it under control of the with statement
+        # create bed reader and enter the file into the stack
         bed = stack.enter_context(BEDReader(bed_path))
         bed.read()
         bed.skipMetaData()
 
-        # create list of vcf reader objects
+        # setup list of vcf reader objects, and put them in file stack
         for i, vcf_info in enumerate(vcf_list):
             vcf_rdrs.append(setupVCFReader(vcf=vcf_info[0], 
                                            offset=vcf_info[1], 
@@ -65,8 +57,8 @@ def mainloop():
         lvdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "lev-comp.tsv"), "w"))
         ldof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "len-comp.tsv"), "w"))
         
-
-        bdof_meta, pdof_meta, lvdof_meta, ldof_meta = setupMetadata(vcf_rdrs)
+        # write metadata to ourput files
+        bdof_meta, pdof_meta, lvdof_meta, ldof_meta = setupMetadata(vcf_rdrs, header_only=False)
         bdof.write(bdof_meta)
         pdof.write(pdof_meta)
         lvdof.write(lvdof_meta)
@@ -74,7 +66,6 @@ def mainloop():
         
 
         str_time = time.perf_counter()
-
 
         # Main Operations loop       
         while bed.cur_line: # loop until BED file reaches end
@@ -110,7 +101,7 @@ def mainloop():
 
 
                 # VCF-VCF Comparisons
-                for other_reader in vcf_rdrs[i+1:]:
+                for other_reader in vcf_rdrs[i + 1:]:
                     # if both readers are not paused or ended
                     if stateCheck(reader) and stateCheck(other_reader):
                         # LVDIST: calculate levenshtein distance of alleles between vcf files

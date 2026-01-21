@@ -10,11 +10,12 @@ LOCAL = os.path.join(PROJ_ROOT, 'scripts\\VCF_Comparisons')
 
 
 class SPECIAL_CASE(Enum):
-    STRAGLR = (True)
-    STRAGLR_SVLEN = (True)
-    VAMOS = (True)
+    STRAGLR = (auto(), True)
+    STRAGLR_SVLEN = (auto(), True)
+    VAMOS = (auto(), True)
 
-    def __init__(self, pos_only):
+    def __init__(self, value ,pos_only):
+        self._value_ = value
         self.pos_only = pos_only
 
 class COMP_ORDER(Enum):

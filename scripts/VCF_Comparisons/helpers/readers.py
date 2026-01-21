@@ -1,4 +1,3 @@
-import sys
 import gzip
 import io
 
@@ -9,7 +8,6 @@ class Reader:
         self.file_obj = None
         self.buffer = buffer_size
         self.path = file_path
-        self.end_state = False # whether or not the end of the file has been reached
         self._raw_line = None
         self.cur_line = None # will be the same as raw_line if no format function is provided to read()
         self.cur_loc = None
@@ -56,7 +54,6 @@ class Reader:
                 else:
                     self.cur_line = self._raw_line
             else: 
-                self.end_state = True
                 self.prev_line = self.cur_line
                 self.cur_line = self._raw_line
 
@@ -93,10 +90,8 @@ class Reader:
 '''
 '''
 class VCFReader(Reader):
-    def __init__(self, file_path: str, start_offset = 0, end_offset = 0):
+    def __init__(self, file_path: str):
         super().__init__(file_path)
-        self.start_off = start_offset
-        self.end_off = end_offset
         self.prev_line = None
         self.header_end = None
 
@@ -146,38 +141,6 @@ class VCFReader(Reader):
 
         except Exception as e:
             raise VCFFormatError(f"Failed to construct Genotype due to unknown error: {e}\nFrom sample: {sample_str}")
- 
-
-    '''
-    
-    '''
-    def skipMetaData(self): 
-        # loop while the current line contains meta data
-        while self._raw_line.startswith("#") and not self.end_state:
-            if self._raw_line.upper().startswith("#CHR"):
-                break
-            else:
-                self.read()  
-
-        # save the file position of the end of the header/metadata
-        self.header_end = self.file_obj.tell()
-
-
-    '''
-    
-    '''
-    def read(self, format_method = None):
-        return super().read(format_method or self.formatLine)
-
-
-    '''
-    
-    '''
-    def _checkIdx(self, idx):
-        if idx == '.':
-            return -1 # will set the allele to None
-        else:
-            return int(idx)
 
 
     '''
@@ -190,27 +153,26 @@ class VCFReader(Reader):
         # if the file is not reading the header/metadata
         if not line_list[0].startswith("#"):  
             try:       
-
                 pos = int(line_list[1])
                 ref_len = len(line_list[3])                
                 info_col = line_list[7].split(';') # grab the INFO column
-                end_str = info_col[0].removeprefix("END=")
+                end_str = ""
+                for i, str in enumerate(info_col): # seach for end position marker      
+                    if "END=" in str:
+                        end_str = info_col[i].removeprefix("END=")
+
                 if end_str.isdigit():
                     end_pos = int(end_str)
                 else:
                     end_pos = pos + ref_len - 1
-
-                ref = line_list[3][self.start_off:ref_len + self.end_off] # the refence sequence as a string, adjusted by the offsets
-                alt_raw = line_list[4].split(",") # returns a list of all alt alleles
-                alt = [alt[self.start_off:len(alt) + self.end_off] for alt in alt_raw]
-
+                
                 # set specific data to their own parameters for better accessibility
                 self.chrom = line_list[0]             
-                self.pos =  pos + self.start_off   
-                self.end_pos = end_pos + self.end_off
+                self.pos = pos 
+                self.end_pos = end_pos
                 self.id = line_list[2]
-                self.ref = ref       
-                self.alt = alt
+                self.ref = line_list[3] 
+                self.alt = line_list[4].split(",") # returns a list of all alt alleles
                 self.qual = line_list[5] 
                 self.filter = line_list[6] 
                 self.info = line_list[7]
@@ -225,7 +187,39 @@ class VCFReader(Reader):
                 raise VCFFormatError(f"Unexpected error setting parameters from line: {line_list}\n{e}")
 
         return line_list
+    
+
+    '''
+    
+    '''
+    def read(self, format_method = None):
+        return super().read(format_method or self.formatLine)
+
+
+    '''
+    
+    '''
+    def skipMetaData(self): 
+        # loop while the current line contains meta data
+        while self._raw_line.startswith("#") and self._raw_line:
+            if self._raw_line.upper().startswith("#CHR"):
+                break
+            else:
+                self.read()  
+
+        # save the file position of the end of the header/metadata
+        self.header_end = self.file_obj.tell()
         
+
+    '''
+    
+    '''
+    def _checkIdx(self, idx):
+        if idx == '.':
+            return -1 # will set the allele to None
+        else:
+            return int(idx)
+
 
     '''
     
@@ -271,7 +265,7 @@ class BEDReader(Reader):
         if self._raw_line is None:
             self.read()
 
-        while self._raw_line.startswith("#") and not self.end_state:
+        while self._raw_line.startswith("#") and self._raw_line:
             if self._raw_line.upper().startswith("#CHR"):
                 break
             else:

@@ -6,10 +6,8 @@ from pathlib import Path
 root_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(root_dir))
 
-from helpers.utils import *
-
 from helpers.readers import BEDReader
-from helpers.utils import *
+from helpers.utils import setupVCFReader, getFileName
 from helpers.constants import *
 
 # WARNING: LINES SAVED INTO MEMORY WHEN USING FULL ORDERING

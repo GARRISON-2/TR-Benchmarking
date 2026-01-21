@@ -10,12 +10,11 @@ from helpers.readers import *
 
 # set directory variables for file i/o
 PROJ_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_DIR = os.path.join(PROJ_ROOT, 'catalogs')
-# TESTING PURPOSES ONLY
-LOCAL_DATA = os.path.join(PROJ_ROOT, 'local_data') # REMOVE FOR FINAL LAUNCH
+DATA_DIR = os.path.join(PROJ_ROOT, 'HG001.PAW79146')
 
-VCF = os.path.join(LOCAL_DATA, 'HG001.PAW79146.haplotagged.URfix.straglr.vcf')
+VCF = os.path.join(DATA_DIR, 'HG001.PAW79146.haplotagged.URfix.straglr.vcf')
 vr = VCFReader(VCF)
+
 with vr as vr:
     vr.skipMetaData()
     diffs = 0

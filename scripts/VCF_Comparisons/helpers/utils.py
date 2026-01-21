@@ -7,7 +7,14 @@ from helpers.constants import *
 
 
 
-def compareString(str1: str, str2: str, method=COMP_METHOD.LEVENSHTEIN):
+def cleanNum(num: int):
+    if num is None:
+        return 0
+    else:
+        return abs(num)
+
+
+def compareSeq(str1: str, str2: str, method=COMP_METHOD.LEVENSHTEIN):
     allowed = {'A', 'T', 'C', 'G'}
 
     # if the string is not null and it only contains the characters A, T, C, or G
@@ -20,9 +27,69 @@ def compareString(str1: str, str2: str, method=COMP_METHOD.LEVENSHTEIN):
     
     else:
         return None
+    
+
+def compareGt(gt1: str, gt2: str, comp_method = COMP_METHOD.LEVENSHTEIN, comp_ord = None):
+
+    # pad genotype list lengths to length 2 for compatibility (eg. for handling hemizygous regions)
+    gt1 += [None] * (2 - len(gt1))
+    gt2 += [None] * (2 - len(gt2))
+
+    # if the correct comparison order is already known:
+    if comp_ord == COMP_ORDER.VERTICAL:
+        vert_dist = [compareSeq(gt1[0], gt2[0], comp_method), compareSeq(gt1[1], gt2[1], comp_method)]
+        v_sum = sum(cleanNum(dist) for dist in vert_dist)
+
+        return v_sum, NoneToNA(vert_dist[0]), NoneToNA(vert_dist[1]), comp_ord
+
+    if comp_ord == COMP_ORDER.CROSS:
+        cross_dist = [compareSeq(gt1[1], gt2[0], comp_method), compareSeq(gt1[0], gt2[1], comp_method)]
+        c_sum = sum(cleanNum(dist) for dist in cross_dist)
+
+        return c_sum,  NoneToNA(cross_dist[0]), NoneToNA(cross_dist[1]), comp_ord
+
+    # find the correct comparison order
+    else: 
+        # get comparisons for both permutations of comparing alleles
+        vert_dist = [compareSeq(gt1[0], gt2[0], comp_method), compareSeq(gt1[1], gt2[1], comp_method)]
+        cross_dist = [compareSeq(gt1[1], gt2[0], comp_method), compareSeq(gt1[0], gt2[1], comp_method)]
+
+        v_sum = sum(cleanNum(dist) for dist in vert_dist)
+        c_sum = sum(cleanNum(dist) for dist in cross_dist)
+
+        # assume the lesser comparison value is the correct comparison order
+        best_sum, best_dist, best_ord = (v_sum, vert_dist, COMP_ORDER.VERTICAL) if v_sum <= c_sum else (c_sum, cross_dist, COMP_ORDER.CROSS)
+
+        # returns the sum of the comparisons between alleles, as well as the individual comparisons
+        return best_sum, NoneToNA(best_dist[0]), NoneToNA(best_dist[1]), best_ord
+    
+
+def grabStraglrLen(rdr):
+    for i, str in enumerate(rdr.info): # loop over info and grab number of bases   
+        if "RB" in str:
+            return int(rdr.info[i].removeprefix("RB="))
 
 
-def setupMetadata(vlist: list[COMP_VCFReader]):
+def getFileName(path_str: str):
+    # enumerate through the reversed file path to grab
+    # the index of where the file name starts
+    for i, letter in enumerate(reversed(path_str)):
+        if letter == "\\":
+            name_start = len(path_str) - i
+            break
+
+    # slice for the file name minus the path and the format
+    return path_str[name_start:]#[name_start:-4]
+
+
+def NoneToNA(input):
+    if input is None:
+        return 'NA'
+    else:
+        return input
+
+
+def setupMetadata(vlist: list[COMP_VCFReader], header_only = False):
     # output strings
     header_start = f"CHROM\tSTART\tEND"
     bdof_meta = "##<BED-VCF Position Comparison>\n"
@@ -30,39 +97,39 @@ def setupMetadata(vlist: list[COMP_VCFReader]):
     lvdof_meta = "##<VCF Levenshtein Comparison>\n"
     ldof_meta = "##<VCF Length Comparison>\n"
 
+    if not header_only:
+        # Write metadata to output file
+        for i, rdr in enumerate(vlist):
+            file_name = getFileName(vlist[i].path)
 
-    # Write metadata to output file
-    for i, rdr in enumerate(vlist):
-        file_name = getFileName(vlist[i].path)
+            bdof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
+            pdof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
+            lvdof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
+            ldof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
+        
+        bdof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
+        pdof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
+        lvdof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
+        ldof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
 
-        bdof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
-        pdof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
-        lvdof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
-        ldof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
-    
-    bdof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
-    pdof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
-    lvdof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
-    ldof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
+        bdof_meta += (f"##INFO=<START: Start position from BED file>\n")
+        pdof_meta += (f"##INFO=<START: Start position from BED file>\n")
+        lvdof_meta += (f"##INFO=<START: Start position from BED file>\n")
+        ldof_meta += (f"##INFO=<START: Start position from BED file>\n")
 
-    bdof_meta += (f"##INFO=<START: Start position from BED file>\n")
-    pdof_meta += (f"##INFO=<START: Start position from BED file>\n")
-    lvdof_meta += (f"##INFO=<START: Start position from BED file>\n")
-    ldof_meta += (f"##INFO=<START: Start position from BED file>\n")
+        bdof_meta += (f"##INFO=<END: End position from BED file>\n")
+        pdof_meta += (f"##INFO=<END: End position from BED file>\n")
+        lvdof_meta += (f"##INFO=<END: End position from BED file>\n")
+        ldof_meta += (f"##INFO=<END: End position from BED file>\n")
 
-    bdof_meta += (f"##INFO=<END: End position from BED file>\n")
-    pdof_meta += (f"##INFO=<END: End position from BED file>\n")
-    lvdof_meta += (f"##INFO=<END: End position from BED file>\n")
-    ldof_meta += (f"##INFO=<END: End position from BED file>\n")
-
-    bdof_meta += (f"##INFO=<BDDIST_START_i: BED start - FILE_i start>\n")  
-    bdof_meta += (f"##INFO=<BDDIST_END_i: BED end - FILE_i end>\n")
-    pdof_meta += (f"##INFO=<PSDIST_START_i-j: FILE_i start - FILE_j start>\n")
-    pdof_meta += (f"##INFO=<PSDIST_END_i-j: FILE_i end - FILE_j end>\n")
-    lvdof_meta += (f"##INFO=<LVDIST_ALL1_i-j: Levenshtein distance bewteen FILE_i allele 1 and FILE_j allele 1>\n")
-    lvdof_meta += (f"##INFO=<LVDIST_ALL2_i-j: Levenshtein distance bewteen FILE_i allele 2 and FILE_j allele 2>\n")
-    ldof_meta += (f"##INFO=<LNDIST_ALL1_i-j: FILE_i allele 1 length - FILE_j allele 1 length>\n")
-    ldof_meta += (f"##INFO=<LNDIST_ALL2_i-j: FILE_i allele 2 length - FILE_j allele 2 length>\n")
+        bdof_meta += (f"##INFO=<BDDIST_START_i: BED start - FILE_i start>\n")  
+        bdof_meta += (f"##INFO=<BDDIST_END_i: BED end - FILE_i end>\n")
+        pdof_meta += (f"##INFO=<PSDIST_START_i-j: FILE_i start - FILE_j start>\n")
+        pdof_meta += (f"##INFO=<PSDIST_END_i-j: FILE_i end - FILE_j end>\n")
+        lvdof_meta += (f"##INFO=<LVDIST_ALL1_i-j: Levenshtein distance bewteen FILE_i allele 1 and FILE_j allele 1>\n")
+        lvdof_meta += (f"##INFO=<LVDIST_ALL2_i-j: Levenshtein distance bewteen FILE_i allele 2 and FILE_j allele 2>\n")
+        ldof_meta += (f"##INFO=<LNDIST_ALL1_i-j: FILE_i allele 1 length - FILE_j allele 1 length>\n")
+        ldof_meta += (f"##INFO=<LNDIST_ALL2_i-j: FILE_i allele 2 length - FILE_j allele 2 length>\n")
 
     # Configure column headers for output files
     bdof_meta += (header_start)
@@ -84,77 +151,9 @@ def setupMetadata(vlist: list[COMP_VCFReader]):
     return bdof_meta, pdof_meta, lvdof_meta, ldof_meta
 
 
-def cleanNum(num: int):
-    if num is None:
-        return 0
-    else:
-        return abs(num)
-    
-
-def NoneToNA(input):
-    if input is None:
-        return 'NA'
-    else:
-        return input
-
-
-def compareGt(gt1: str, gt2: str, comp_method = COMP_METHOD.LEVENSHTEIN, comp_ord = None):
-
-    # pad genotypes to length 2 for compatibility (eg. for handling hemizygous regions)
-    gt1 += [None] * (2 - len(gt1))
-    gt2 += [None] * (2 - len(gt2))
-
-
-    if comp_ord == COMP_ORDER.VERTICAL:
-        vert_dist = [compareString(gt1[0], gt2[0], comp_method), compareString(gt1[1], gt2[1], comp_method)]
-        v_sum = sum(cleanNum(dist) for dist in vert_dist)
-
-        return v_sum, NoneToNA(vert_dist[0]), NoneToNA(vert_dist[1]), comp_ord
-
-    if comp_ord == COMP_ORDER.CROSS:
-        cross_dist = [compareString(gt1[1], gt2[0], comp_method), compareString(gt1[0], gt2[1], comp_method)]
-        c_sum = sum(cleanNum(dist) for dist in cross_dist)
-
-        return c_sum,  NoneToNA(cross_dist[0]), NoneToNA(cross_dist[1]), comp_ord
-
-    else: 
-        # get comparisons for both permutations of comparing alleles
-        vert_dist = [compareString(gt1[0], gt2[0], comp_method), compareString(gt1[1], gt2[1], comp_method)]
-        cross_dist = [compareString(gt1[1], gt2[0], comp_method), compareString(gt1[0], gt2[1], comp_method)]
-
-        v_sum = sum(cleanNum(dist) for dist in vert_dist)
-        c_sum = sum(cleanNum(dist) for dist in cross_dist)
-
-        # assume the lesser comparison value is the correct comparison order
-        best_sum, best_dist, best_ord = (v_sum, vert_dist, COMP_ORDER.VERTICAL) if v_sum <= c_sum else (c_sum, cross_dist, COMP_ORDER.CROSS)
-
-        # returns the sum of the comparisons between alleles, as well as the individual comparisons
-        return best_sum, NoneToNA(best_dist[0]), NoneToNA(best_dist[1]), best_ord
-    
-
-
-def getFileName(path_str: str):
-    # enumerate through the reversed file path to grab
-    # the index of where the file name starts
-    for i, letter in enumerate(reversed(path_str)):
-        if letter == "\\":
-            name_start = len(path_str) - i
-            break
-
-    # slice for the file name minus the path and the format
-    return path_str[name_start:]#[name_start:-4]
-
-
-def stateCheck(rdr: COMP_VCFReader):
-    return (not rdr.pause) and (not rdr.end_state)
-
-
 def setupVCFReader(vcf: str, stk: ExitStack, offset=[0,0], sc = None, skip_head = True, pos_only = False):
     try:
-        # create VCFReader object for file.
-        #if "vamos" in vcf.lower():
-        
-        
+        # create VCFReader object for file.  
         if sc == None:
             rdr = COMP_VCFReader(file_path=vcf, 
                         start_offset=offset[0], 
@@ -180,3 +179,7 @@ def setupVCFReader(vcf: str, stk: ExitStack, offset=[0,0], sc = None, skip_head 
         rdr.skipMetaData()
 
     return rdr
+
+
+def stateCheck(rdr: COMP_VCFReader):
+    return (not rdr.pause) and (not rdr.end_state)
