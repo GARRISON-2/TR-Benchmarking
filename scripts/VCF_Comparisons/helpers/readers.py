@@ -1,10 +1,17 @@
 import gzip
 import io
 
-'''
-'''
+
 class Reader:
     def __init__(self, file_path: str, buffer_size = io.DEFAULT_BUFFER_SIZE):
+        """
+        Docstring for __init__
+        
+        :param self: Description
+        :param file_path: Description
+        :type file_path: str
+        :param buffer_size: Description
+        """
         self.file_obj = None
         self.buffer = buffer_size
         self.path = file_path
@@ -15,10 +22,20 @@ class Reader:
 
     @property
     def raw_line(self):
+        """
+        Docstring for raw_line
+        
+        :param self: Description
+        """
         return self._raw_line
 
 
     def close_file(self):
+        """
+        Docstring for close_file
+        
+        :param self: Description
+        """
         if not self.file_obj: # if file was opened
             self.file_obj.close()
 
@@ -26,6 +43,11 @@ class Reader:
 
 
     def open_file(self):
+        """
+        Docstring for open_file
+        
+        :param self: Description
+        """
         try:
             if self.path.endswith(".gz"):
                 self.file_obj = gzip.open(self.path, "rt", encoding="utf-8")
@@ -38,9 +60,13 @@ class Reader:
             raise FileIOError(f"File Opening Error: {e}")
 
 
-    '''
-    '''
     def read(self, format = None):
+        """
+        Docstring for read
+        
+        :param self: Description
+        :param format: Description
+        """
         try:
             self._raw_line = self.file_obj.readline()
             self.cur_loc = self.file_obj.tell()
@@ -87,10 +113,15 @@ class Reader:
 
 
 
-'''
-'''
 class VCFReader(Reader):
     def __init__(self, file_path: str):
+        """
+        Docstring for __init__
+        
+        :param self: Description
+        :param file_path: Description
+        :type file_path: str
+        """
         super().__init__(file_path)
         self.prev_line = None
         self.header_end = None
@@ -107,10 +138,15 @@ class VCFReader(Reader):
         self.genotype = None
         
 
-    '''
-    
-    '''
     def buildGt(self, sample_col=9, ref=None, alt = None):
+        """
+        Docstring for buildGt
+        
+        :param self: Description
+        :param sample_col: Description
+        :param ref: Description
+        :param alt: Description
+        """
         try:
             # use class parameters unless otherwise specified
             ref = self.ref if not ref else ref
@@ -143,10 +179,14 @@ class VCFReader(Reader):
             raise VCFFormatError(f"Failed to construct Genotype due to unknown error: {e}\nFrom sample: {sample_str}")
 
 
-    '''
-    
-    '''
     def formatLine(self, ls: str):
+        """
+        Docstring for formatLine
+        
+        :param self: Description
+        :param ls: Description
+        :type ls: str
+        """
         # split line string into list of strings
         line_list = ls.strip().split("\t")
 
@@ -189,17 +229,20 @@ class VCFReader(Reader):
         return line_list
     
 
-    '''
-    
-    '''
     def read(self, format_method = None):
         return super().read(format_method or self.formatLine)
 
 
-    '''
-    
-    '''
     def skipMetaData(self): 
+        """
+        Docstring for skipMetaData
+        
+        :param self: Description
+        """
+
+        if self._raw_line is None:
+            self.read()
+
         # loop while the current line contains meta data
         while self._raw_line.startswith("#") and self._raw_line:
             if self._raw_line.upper().startswith("#CHR"):
@@ -211,19 +254,19 @@ class VCFReader(Reader):
         self.header_end = self.file_obj.tell()
         
 
-    '''
-    
-    '''
     def _checkIdx(self, idx):
+        """
+        Docstring for _checkIdx
+        
+        :param self: Description
+        :param idx: Description
+        """
         if idx == '.':
             return -1 # will set the allele to None
         else:
             return int(idx)
 
 
-    '''
-    
-    '''
     def _setFilePosition(self, file_pos: int):
         self.file_obj.seek(file_pos)
 
@@ -232,11 +275,25 @@ class VCFReader(Reader):
 
 class BEDReader(Reader):
     def __init__(self, file_path: str):
+        """
+        Docstring for __init__
+        
+        :param self: Description
+        :param file_path: Description
+        :type file_path: str
+        """
         super().__init__(file_path)
         self.prev_line = None
 
    
     def formatLine(self, ls: str):
+        """
+        Docstring for formatLine
+        
+        :param self: Description
+        :param ls: Description
+        :type ls: str
+        """
         # split line string into list
         line_list = ls.strip().split("\t")
 
@@ -258,9 +315,20 @@ class BEDReader(Reader):
         return line_list
     
     def read(self, format_method = None):
+        """
+        Docstring for read
+        
+        :param self: Description
+        :param format_method: Description
+        """
         return super().read(format_method or self.formatLine)
     
     def skipMetaData(self): 
+        """
+        Docstring for skipMetaData
+        
+        :param self: Description
+        """
         # loop while the current line contains meta data
         if self._raw_line is None:
             self.read()

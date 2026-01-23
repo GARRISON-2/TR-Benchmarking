@@ -11,7 +11,6 @@ LOCAL = os.path.join(PROJ_ROOT, 'scripts\\VCF_Comparisons')
 
 class SPECIAL_CASE(Enum):
     STRAGLR = (auto(), True)
-    STRAGLR_SVLEN = (auto(), True)
     VAMOS = (auto(), True)
 
     def __init__(self, value ,pos_only):
@@ -25,3 +24,5 @@ class COMP_ORDER(Enum):
 class COMP_METHOD(Enum):
     LEVENSHTEIN = auto()
     LENGTH = auto()
+    STRAGLR_LENGTH = auto()
+

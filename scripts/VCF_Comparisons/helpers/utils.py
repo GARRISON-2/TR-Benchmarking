@@ -1,49 +1,77 @@
-import Levenshtein as lv
+import Levenshtein
 from contextlib import ExitStack
 import sys
-from helpers.comp_readers import COMP_VCFReader
+from helpers.comp_readers import COMP_VCFReader, alleleData
 from helpers.readers import FileIOError, FileReadError, VCFFormatError, BEDFormatError
 from helpers.constants import *
 
 
 
 def cleanNum(num: int):
+    """
+    Docstring for cleanNum
+    
+    :param num: Description
+    :type num: int
+    """
     if num is None:
         return 0
     else:
         return abs(num)
 
 
-def compareSeq(str1: str, str2: str, method=COMP_METHOD.LEVENSHTEIN):
-    allowed = {'A', 'T', 'C', 'G'}
-
-    # if the string is not null and it only contains the characters A, T, C, or G
-    if (str1 and set(str1).issubset(allowed)) and (str2 and set(str2).issubset(allowed)):
-        if method == COMP_METHOD.LEVENSHTEIN:
-            return lv.distance(str1, str2)
-        
-        if method == COMP_METHOD.LENGTH:
-            return len(str1) - len(str2)
+def compareAllele(all1: alleleData, all2: alleleData, method=COMP_METHOD.LEVENSHTEIN):
+    """
+    Docstring for compareAllele
     
-    else:
-        return None
+    :param all1: Description
+    :type all1: str
+    :param all2: Description
+    :type all2: str
+    :param method: Description
+    :type method: COMP_METHOD
+    """
+    ALLOWED = {'A', 'T', 'C', 'G'}
+
+    if all1 and all2:
+        # if the allele is not null and it only contains the characters A, T, C, or G
+        if method == COMP_METHOD.LEVENSHTEIN and \
+        (all1.allele_str and set(all1.allele_str).issubset(ALLOWED)) and \
+        (all2.allele_str and set(all2.allele_str).issubset(ALLOWED)):
+            return Levenshtein.distance(all1.allele_str, all2.allele_str)
+            
+        if method == COMP_METHOD.LENGTH and \
+            all1.length > 0 and all2.length > 0:
+            return all1.length - all2.length
+    
+    # default to return None if checks fail
+    return None
     
 
-def compareGt(gt1: str, gt2: str, comp_method = COMP_METHOD.LEVENSHTEIN, comp_ord = None):
-
-    # pad genotype list lengths to length 2 for compatibility (eg. for handling hemizygous regions)
+def compareGt(gt1: list, gt2: list, comp_method = COMP_METHOD.LEVENSHTEIN, comp_ord = None):
+    """
+    Docstring for compareGt
+    
+    :param gt1: Description
+    :type gt1: str
+    :param gt2: Description
+    :type gt2: str
+    :param comp_method: Description
+    :param comp_ord: Description
+    """
+    # pad genotype list lengths to length 2 for compatibility (ie. for handling hemizygous regions)
     gt1 += [None] * (2 - len(gt1))
     gt2 += [None] * (2 - len(gt2))
 
     # if the correct comparison order is already known:
     if comp_ord == COMP_ORDER.VERTICAL:
-        vert_dist = [compareSeq(gt1[0], gt2[0], comp_method), compareSeq(gt1[1], gt2[1], comp_method)]
+        vert_dist = [compareAllele(gt1[0], gt2[0], comp_method), compareAllele(gt1[1], gt2[1], comp_method)]
         v_sum = sum(cleanNum(dist) for dist in vert_dist)
 
         return v_sum, NoneToNA(vert_dist[0]), NoneToNA(vert_dist[1]), comp_ord
 
     if comp_ord == COMP_ORDER.CROSS:
-        cross_dist = [compareSeq(gt1[1], gt2[0], comp_method), compareSeq(gt1[0], gt2[1], comp_method)]
+        cross_dist = [compareAllele(gt1[1], gt2[0], comp_method), compareAllele(gt1[0], gt2[1], comp_method)]
         c_sum = sum(cleanNum(dist) for dist in cross_dist)
 
         return c_sum,  NoneToNA(cross_dist[0]), NoneToNA(cross_dist[1]), comp_ord
@@ -51,8 +79,8 @@ def compareGt(gt1: str, gt2: str, comp_method = COMP_METHOD.LEVENSHTEIN, comp_or
     # find the correct comparison order
     else: 
         # get comparisons for both permutations of comparing alleles
-        vert_dist = [compareSeq(gt1[0], gt2[0], comp_method), compareSeq(gt1[1], gt2[1], comp_method)]
-        cross_dist = [compareSeq(gt1[1], gt2[0], comp_method), compareSeq(gt1[0], gt2[1], comp_method)]
+        vert_dist = [compareAllele(gt1[0], gt2[0], comp_method), compareAllele(gt1[1], gt2[1], comp_method)]
+        cross_dist = [compareAllele(gt1[1], gt2[0], comp_method), compareAllele(gt1[0], gt2[1], comp_method)]
 
         v_sum = sum(cleanNum(dist) for dist in vert_dist)
         c_sum = sum(cleanNum(dist) for dist in cross_dist)
@@ -62,15 +90,15 @@ def compareGt(gt1: str, gt2: str, comp_method = COMP_METHOD.LEVENSHTEIN, comp_or
 
         # returns the sum of the comparisons between alleles, as well as the individual comparisons
         return best_sum, NoneToNA(best_dist[0]), NoneToNA(best_dist[1]), best_ord
-    
-
-def grabStraglrLen(rdr):
-    for i, str in enumerate(rdr.info): # loop over info and grab number of bases   
-        if "RB" in str:
-            return int(rdr.info[i].removeprefix("RB="))
 
 
 def getFileName(path_str: str):
+    """
+    Docstring for getFileName
+    
+    :param path_str: Description
+    :type path_str: str
+    """
     # enumerate through the reversed file path to grab
     # the index of where the file name starts
     for i, letter in enumerate(reversed(path_str)):
@@ -83,6 +111,11 @@ def getFileName(path_str: str):
 
 
 def NoneToNA(input):
+    """
+    Docstring for NoneToNA
+    
+    :param input: Description
+    """
     if input is None:
         return 'NA'
     else:
@@ -152,6 +185,20 @@ def setupMetadata(vlist: list[COMP_VCFReader], header_only = False):
 
 
 def setupVCFReader(vcf: str, stk: ExitStack, offset=[0,0], sc = None, skip_head = True, pos_only = False):
+    """
+    Docstring for setupVCFReader
+    
+    :param vcf: Description
+    :type vcf: str
+    :param stk: Description
+    :type stk: ExitStack
+    :param offset: Description
+    :param sc: Description
+    :param skip_head: Description
+    :param pos_only: Description
+    """
+    
+    
     try:
         # create VCFReader object for file.  
         if sc == None:
@@ -172,8 +219,6 @@ def setupVCFReader(vcf: str, stk: ExitStack, offset=[0,0], sc = None, skip_head 
     except FileIOError as e:
         sys.exit(f"\nERROR\nExiting program due to file error: {e}")
 
-    rdr.safeRead()
-
     if skip_head:
         # move past meta data
         rdr.skipMetaData()
@@ -182,4 +227,10 @@ def setupVCFReader(vcf: str, stk: ExitStack, offset=[0,0], sc = None, skip_head 
 
 
 def stateCheck(rdr: COMP_VCFReader):
+    """
+    Docstring for stateCheck
+    
+    :param rdr: Description
+    :type rdr: COMP_VCFReader
+    """
     return (not rdr.pause) and (not rdr.end_state)

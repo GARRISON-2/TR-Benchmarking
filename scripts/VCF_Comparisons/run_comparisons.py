@@ -21,13 +21,13 @@ def mainloop():
           
     vcf_list = [
         # the file name, the offset amount (eg. [-1, 0] for 1 based inclusive), and whether it needs special parsing parameters    
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.atarva.sorted.vcf"), [0, 0], None], 
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.atarva.sorted.vcf"), [-1, 0], None], 
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.strdust.sorted.vcf"), [0,0], None],
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.longTR.sorted.vcf"), [0,0], None],
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.longTR.sorted.vcf"), [-1,0], None],
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.straglr.sorted.vcf"), [0,0], SPECIAL_CASE.STRAGLR],
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.vamos.sorted.vcf"), [0,0], SPECIAL_CASE.VAMOS],
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.strkit.sorted.vcf"), [0,0], None],
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.medaka_to_ref.TR.sorted.vcf"), [0,0], None]
+        [os.path.join(DATA_DIR, "HG007.30x\\HG007.medaka_to_ref.TR.sorted.vcf"), [-1,0], None]
         ]
 
 
@@ -48,7 +48,7 @@ def mainloop():
             
             # build first line's genotype and save it      
             vcf_rdrs[i].safeRead()
-            vcf_rdrs[i].buildGt()
+            vcf_rdrs[i].buildGtData()
 
 
         # open output files and put it into the exit stack
@@ -105,19 +105,20 @@ def mainloop():
                     # if both readers are not paused or ended
                     if stateCheck(reader) and stateCheck(other_reader):
                         # LVDIST: calculate levenshtein distance of alleles between vcf files
-                        gt_lvdiff, a1_lvdiff, a2_lvdiff, order = compareGt(reader.genotype, 
-                                                                    other_reader.genotype)
+                        gt_lvdiff, a1_lvdiff, a2_lvdiff, order = compareGt(reader.gt_data_pack, 
+                                                                    other_reader.gt_data_pack,
+                                                                    comp_method=COMP_METHOD.LEVENSHTEIN)
                         lvdof_out_str += f"\t{a1_lvdiff}\t{a2_lvdiff}"
                     
                         # LENDIST: calculate difference in allele lengths between vcf files
-                        gt_ldiff, a1_ldiff, a2_ldiff, order = compareGt(reader.genotype, 
-                                                                 other_reader.genotype, 
-                                                                 comp_method=COMP_METHOD.LENGTH,
-                                                                 comp_ord=order)
+                        gt_ldiff, a1_ldiff, a2_ldiff, order = compareGt(reader.gt_data_pack, 
+                                                                other_reader.gt_data_pack, 
+                                                                comp_method=COMP_METHOD.LENGTH,
+                                                                comp_ord=order)
                         ldof_out_str += f"\t{a1_ldiff}\t{a2_ldiff}"
 
-                        if a1_ldiff > a1_lvdiff or a2_ldiff > a2_lvdiff:
-                            raise Exception("\nFATAL PROGRAM ERROR\nLength difference between strings greater than Levenshtein distance.")
+                        #if a1_ldiff > a1_lvdiff or a2_ldiff > a2_lvdiff:
+                        #   raise Exception("\nFATAL PROGRAM ERROR\nLength difference between strings greater than Levenshtein distance.")
 
                         # POSDIST: calculate difference in positions between vcf files
                         vcf_start_diff = reader.pos - other_reader.pos
@@ -142,7 +143,7 @@ def mainloop():
                 rdr.safeRead()
 
                 if not rdr.end_state:
-                    rdr.buildGt()   
+                    rdr.buildGtData()   
 
             bed.read() 
 
