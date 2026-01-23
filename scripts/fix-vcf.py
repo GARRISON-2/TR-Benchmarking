@@ -45,7 +45,13 @@ def fix_row(row, fasta):
     chrom = fields[0]
     start_pos = int(fields[1])
     info_field = fields[7]
+
+    # VAMOS alleles are consistently 1 bp shorter than the ref with the last bp missing so I think this resolves it
     end_pos = int(info_field.split("END=")[1].split(";")[0])
+    end_pos -= 1
+    # Replace the adjusted END position in the INFO field
+    info_field = info_field.replace(f"END={end_pos + 1}", f"END={end_pos}")
+
     sample_field = fields[9]
     genotype = sample_field.split(":")[0]
     alt_alleles = sample_field.split(":")[1:]
@@ -108,7 +114,7 @@ def fetch_ref_allele(chrom, start, end, fasta):
         --ref CLI argument or the REF_FASTA environment variable.
     """
     try:
-        seq = fasta.fetch(chrom, start - 1, end - 1) # VAMOS alleles are consistently 1 bp shorter than the ref with the last bp missing so I think this resolves it
+        seq = fasta.fetch(chrom, start - 1, end)
     except Exception as e:
         seq = 'N'
         sys.stderr.write(f"Error fetching {chrom}:{start}-{end}: {e}\n")
