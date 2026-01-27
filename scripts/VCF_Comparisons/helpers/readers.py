@@ -7,7 +7,6 @@ class Reader:
         """
         Docstring for __init__
         
-        :param self: Description
         :param file_path: Description
         :type file_path: str
         :param buffer_size: Description
@@ -25,7 +24,7 @@ class Reader:
         """
         Docstring for raw_line
         
-        :param self: Description
+        
         """
         return self._raw_line
 
@@ -34,7 +33,7 @@ class Reader:
         """
         Docstring for close_file
         
-        :param self: Description
+        
         """
         if not self.file_obj: # if file was opened
             self.file_obj.close()
@@ -46,7 +45,7 @@ class Reader:
         """
         Docstring for open_file
         
-        :param self: Description
+        
         """
         try:
             if self.path.endswith(".gz"):
@@ -63,8 +62,7 @@ class Reader:
     def read(self, format = None):
         """
         Docstring for read
-        
-        :param self: Description
+              
         :param format: Description
         """
         try:
@@ -93,6 +91,30 @@ class Reader:
             raise FileReadError(f"Failed to read from {self.path}\n Unknown Error {e}")
 
 
+    def skipMetaData(self, delimiter='#', end_delimiter = None): 
+        """
+        Docstring for skipMetaData
+        
+        
+        """
+
+        if self._raw_line is None:
+            self.read()
+
+        # loop while the current line contains meta data
+        while self._raw_line and self._raw_line.startswith(delimiter):
+            if end_delimiter and self._raw_line.startswith(end_delimiter):
+                break
+            else:
+                self.read()  
+
+        # save the file position of the end of the header/metadata
+        self.header_end = self.file_obj.tell()
+
+
+    def _setFilePosition(self, file_pos: int):
+        self.file_obj.seek(file_pos)
+
 
     def __iter__(self):
         return self
@@ -114,11 +136,13 @@ class Reader:
 
 
 class VCFReader(Reader):
+    _DEFAULT = object()
+
     def __init__(self, file_path: str):
         """
         Docstring for __init__
         
-        :param self: Description
+        
         :param file_path: Description
         :type file_path: str
         """
@@ -142,7 +166,7 @@ class VCFReader(Reader):
         """
         Docstring for buildGt
         
-        :param self: Description
+        
         :param sample_col: Description
         :param ref: Description
         :param alt: Description
@@ -183,7 +207,7 @@ class VCFReader(Reader):
         """
         Docstring for formatLine
         
-        :param self: Description
+        
         :param ls: Description
         :type ls: str
         """
@@ -230,35 +254,19 @@ class VCFReader(Reader):
     
 
     def read(self, format_method = None):
-        return super().read(format_method or self.formatLine)
-
-
-    def skipMetaData(self): 
-        """
-        Docstring for skipMetaData
-        
-        :param self: Description
-        """
-
-        if self._raw_line is None:
-            self.read()
-
-        # loop while the current line contains meta data
-        while self._raw_line.startswith("#") and self._raw_line:
-            if self._raw_line.upper().startswith("#CHR"):
-                break
-            else:
-                self.read()  
-
-        # save the file position of the end of the header/metadata
-        self.header_end = self.file_obj.tell()
+        if format_method is self._DEFAULT:
+            target_format = self.formatLine
+        else:
+            target_format = format_method
+            
+        return super().read(target_format)
         
 
     def _checkIdx(self, idx):
         """
         Docstring for _checkIdx
         
-        :param self: Description
+        
         :param idx: Description
         """
         if idx == '.':
@@ -266,19 +274,17 @@ class VCFReader(Reader):
         else:
             return int(idx)
 
-
-    def _setFilePosition(self, file_pos: int):
-        self.file_obj.seek(file_pos)
-
              
 
 
 class BEDReader(Reader):
+    _DEFAULT = object()
+
     def __init__(self, file_path: str):
         """
         Docstring for __init__
         
-        :param self: Description
+        
         :param file_path: Description
         :type file_path: str
         """
@@ -290,7 +296,7 @@ class BEDReader(Reader):
         """
         Docstring for formatLine
         
-        :param self: Description
+        
         :param ls: Description
         :type ls: str
         """
@@ -314,30 +320,20 @@ class BEDReader(Reader):
 
         return line_list
     
-    def read(self, format_method = None):
+
+    def read(self, format_method = _DEFAULT):
         """
         Docstring for read
-        
-        :param self: Description
+              
         :param format_method: Description
         """
-        return super().read(format_method or self.formatLine)
+        if format_method is self._DEFAULT:
+            target_format = self.formatLine
+        else:
+            target_format = format_method
+            
+        return super().read(target_format)
     
-    def skipMetaData(self): 
-        """
-        Docstring for skipMetaData
-        
-        :param self: Description
-        """
-        # loop while the current line contains meta data
-        if self._raw_line is None:
-            self.read()
-
-        while self._raw_line.startswith("#") and self._raw_line:
-            if self._raw_line.upper().startswith("#CHR"):
-                break
-            else:
-                self.read()  
 
 
 

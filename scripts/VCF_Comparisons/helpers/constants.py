@@ -26,3 +26,6 @@ class COMP_METHOD(Enum):
     LENGTH = auto()
     STRAGLR_LENGTH = auto()
 
+class ORDER_METHOD(Enum):
+    ASCII = auto()
+    NUMERIC = auto()

@@ -20,7 +20,7 @@ def cleanNum(num: int):
         return abs(num)
 
 
-def compareAllele(all1: alleleData, all2: alleleData, method=COMP_METHOD.LEVENSHTEIN):
+def compareAllele(all1: alleleData, all2: alleleData, method=COMP_METHOD.LEVENSHTEIN, trim = False):
     """
     Docstring for compareAllele
     
@@ -34,21 +34,26 @@ def compareAllele(all1: alleleData, all2: alleleData, method=COMP_METHOD.LEVENSH
     ALLOWED = {'A', 'T', 'C', 'G'}
 
     if all1 and all2:
-        # if the allele is not null and it only contains the characters A, T, C, or G
+        # if the allele string is not null and it only contains the characters A, T, C, or G
         if method == COMP_METHOD.LEVENSHTEIN and \
         (all1.allele_str and set(all1.allele_str).issubset(ALLOWED)) and \
         (all2.allele_str and set(all2.allele_str).issubset(ALLOWED)):
-            return Levenshtein.distance(all1.allele_str, all2.allele_str)
+            
+            if trim:
+                return Levenshtein.distance(all1.allele_str[alleleData.start_trim:alleleData.end_trim], \
+                                            all2.allele_str[alleleData.start_trim:alleleData.end_trim])
+            else:
+                return Levenshtein.distance(all1.allele_str, all2.allele_str)
             
         if method == COMP_METHOD.LENGTH and \
-            all1.length > 0 and all2.length > 0:
+        all1.length > 0 and all2.length > 0:
             return all1.length - all2.length
     
     # default to return None if checks fail
     return None
     
 
-def compareGt(gt1: list, gt2: list, comp_method = COMP_METHOD.LEVENSHTEIN, comp_ord = None):
+def compareGt(gt1: list, gt2: list, comp_method = COMP_METHOD.LEVENSHTEIN, comp_ord = None, trim = False):
     """
     Docstring for compareGt
     
@@ -63,7 +68,7 @@ def compareGt(gt1: list, gt2: list, comp_method = COMP_METHOD.LEVENSHTEIN, comp_
     gt1 += [None] * (2 - len(gt1))
     gt2 += [None] * (2 - len(gt2))
 
-    # if the correct comparison order is already known:
+    # if the comparison order is given:
     if comp_ord == COMP_ORDER.VERTICAL:
         vert_dist = [compareAllele(gt1[0], gt2[0], comp_method), compareAllele(gt1[1], gt2[1], comp_method)]
         v_sum = sum(cleanNum(dist) for dist in vert_dist)
@@ -221,7 +226,7 @@ def setupVCFReader(vcf: str, stk: ExitStack, offset=[0,0], sc = None, skip_head 
 
     if skip_head:
         # move past meta data
-        rdr.skipMetaData()
+        rdr.skipMetaData(end_delimiter="#CHROM")
 
     return rdr
 

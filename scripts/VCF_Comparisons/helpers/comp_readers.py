@@ -1,4 +1,3 @@
-import sys
 from dataclasses import dataclass
 from helpers.readers import *
 from helpers.constants import *
@@ -12,6 +11,8 @@ class alleleData:
     allele_str: str | None = None
     is_ref: bool | None = None
     length: int = 0
+    start_trim = 0
+    end_trim = 0
 
 
 class COMP_VCFReader(VCFReader):
@@ -20,7 +21,7 @@ class COMP_VCFReader(VCFReader):
         """
         Docstring for __init__
         
-        :param self: Description
+        
         :param file_path: Description
         :param start_offset: Description
         :param end_offset: Description
@@ -36,15 +37,14 @@ class COMP_VCFReader(VCFReader):
         self.skip_num = 0
         self.end_state = False
         self.spec_case = sc
-        self.STRAGLR_svlen = 0
-        self.gt_data_pack = None
+        self.gt_data = None
 
 
     def buildGtData(self, sample_col=9, ref=None, alt = None):
         """
         Docstring for buildGtData
         
-        :param self: Description
+        
         :param sample_col: Description
         :param ref: Description
         :param alt: Description
@@ -97,7 +97,7 @@ class COMP_VCFReader(VCFReader):
                 # add the allele data object to the genotype 
                 gt_data.append(ad)
                 
-            self.gt_data_pack = gt_data
+            self.gt_data = gt_data
 
             return gt_data
         
@@ -108,11 +108,11 @@ class COMP_VCFReader(VCFReader):
             raise VCFFormatError(f"Failed to construct Genotype due to unknown error: {e}\nFrom sample: {sample_str}")
 
 
-    def checkOrder(self, order_method="ASCII"):
+    def checkOrder(self, order_method=ORDER_METHOD.ASCII):
         """
         Docstring for checkOrder
         
-        :param self: Description
+        
         :param order_method: Description
         """
         # check VCF Chromosome ordering
@@ -120,57 +120,43 @@ class COMP_VCFReader(VCFReader):
             prev_chrom = self.prev_line[0]
 
             # ensure vcf is in order
-            if self.chrom < prev_chrom and order_method == "ASCII":
+            if self.chrom < prev_chrom and order_method == ORDER_METHOD.ASCII:
                 raise VCFFormatError(f"\n{self.path} using unknown order.")
-    
-
-    def constructAllele(self, idxs: list, mots: list):
-        """
-        Docstring for constructAllele
-        
-        :param self: Description
-        :param idxs: Description
-        :type idxs: list
-        :param mots: Description
-        :type mots: list
-        """
-        allele = ""
-        for idx in idxs:
-            allele += mots[int(idx)]
-        
-        return allele
 
 
     def constructAlt(self, info: str):
         """
         Docstring for constructAlt
         
-        :param self: Description
+        
         :param info: Description
         :type info: str
         """
         alt = []
 
-        for i, str in enumerate(info): # loop over infor and grab data for constructing allele sequence        
-            if "RU" in str:
-                mot_list = info[i].removeprefix("RU=").split(",")
+        if self.spec_case == SPECIAL_CASE.VAMOS:
+            for i, str in enumerate(info): # loop over info and grab data for constructing allele sequence        
+                if "RU" in str:
+                    mot_list = info[i].removeprefix("RU=").split(",")
 
-            if "ALTANNO_H1" in str:
-                mot_idxs = info[i].removeprefix("ALTANNO_H1=").split("-")
-                alt.append(self.constructAllele(mot_idxs, mot_list))
+                if "ALTANNO_H1" in str:
+                    mot_idxs = info[i].removeprefix("ALTANNO_H1=").split("-")
+                    alt.append(self._constructAllele(mot_idxs, mot_list))
 
-            if "ALTANNO_H2" in str:
-                mot_idxs = info[i].removeprefix("ALTANNO_H2=").split("-")
-                alt.append(self.constructAllele(mot_idxs, mot_list))
+                if "ALTANNO_H2" in str:
+                    mot_idxs = info[i].removeprefix("ALTANNO_H2=").split("-")
+                    alt.append(self._constructAllele(mot_idxs, mot_list))
 
+        else:
+            alt = [None] # functions in super class expect alt to be a list 
         return alt
 
 
-    def posOnlyFormat(self, ls: str):
+    def specialFormat(self, ls: str):
         """
-        Docstring for posOnlyFormat
+        Docstring for specialFormat
         
-        :param self: Description
+        
         :param ls: Description
         :type ls: str
         """
@@ -180,7 +166,6 @@ class COMP_VCFReader(VCFReader):
         # if the file is not reading the header/metadata
         if not line_list[0].startswith("#"):  
             try:       
-
                 pos = int(line_list[1]) 
 
                 info_col = line_list[7].split(';') # grab the INFO column
@@ -188,16 +173,13 @@ class COMP_VCFReader(VCFReader):
 
                 # set specific data to their own parameters for better accessibility
                 self.chrom = line_list[0]             
-                self.pos = pos + self.start_off     
-                self.end_pos = end_pos + self.end_off   
-                self.ref = None
-                if self.spec_case == SPECIAL_CASE.VAMOS:
-                    self.alt = self.constructAlt(info_col)
-                else:        
-                    self.alt = [None] # functions in super class expect alt to be a list                 
+                self.pos = pos    
+                self.end_pos = end_pos 
+                self.ref = line_list[3] if not self.pos_only else None
+                self.alt = self.constructAlt(info_col)                
                 self.info = info_col
-                    
 
+                    
             except IndexError:
                 raise VCFFormatError(f"Missing parameter data from line: {line_list}")
             
@@ -207,42 +189,30 @@ class COMP_VCFReader(VCFReader):
         return line_list
 
 
-    def formatLine(self, ls: str):
+    def VCFParse(self):
         """
-        Docstring for formatLine
+        Docstring for VCFParse
         
-        :param self: Description
-        :param ls: Description
-        :type ls: str
-        """
-        fl = super().formatLine(ls)
-
-        # if the vals have been set already
-        if self.pos and self.end_pos:
-            self.pos += self.start_off
-            self.end_pos += self.end_off
-
-        return fl
-
-
-    def safeRead(self):
-        """
-        Docstring for safeRead
         
-        :param self: Description
         """
         line = None
 
         try: 
             if not self.pause:  
-                format_method = self.posOnlyFormat if self.pos_only else self.formatLine
+                format_method = self.specialFormat if self.pos_only else self.formatLine
                 line = super().read(format_method)  
+
+                # if the vals have been set already
+                if self.pos and self.end_pos:
+                    # add the given offsets to the current positions
+                    self.pos += self.start_off 
+                    self.end_pos += self.end_off
 
                 if not line: 
                     self.end_state = True
                  
         except (FileReadError, VCFFormatError, BEDFormatError) as e:
-            sys.exit(f"\nERROR\n{e}")   
+            raise type(e)(f"\nERROR\n{e}") from e
 
         return line
 
@@ -251,16 +221,13 @@ class COMP_VCFReader(VCFReader):
         """
         Docstring for syncToBed
         
-        :param self: Description
+        
         :param bed: Description
         :type bed: BEDReader
         :param order_method: Description
         """
         # check VCF chromosome ordering
-        try:
-            self.checkOrder(order_method)
-        except Exception as e:
-            sys.exit(f"\nERROR\n{e}\nEnding program.")
+        self.checkOrder(order_method)
 
         # Run Alingment Checks
         chrom_match = (self.chrom == bed.chrom)
@@ -270,7 +237,7 @@ class COMP_VCFReader(VCFReader):
             and not self.end_state:
 
             # move the file line forward until it is no longer behind, or the end of the file is reached
-            self.safeRead()
+            self.VCFParse()
             self.checkOrder(order_method)
 
             self.skip_num += 1
@@ -285,8 +252,7 @@ class COMP_VCFReader(VCFReader):
 
             self.pause = True # pause vcf from being able to move to the next line or run comparisons
 
-        # if the vcf is not ahead or the chromosomes dont match, continue moving forward
-        else: 
+        else: # else the vcf aligns with the bed
             self.pause = False
 
 
@@ -294,7 +260,7 @@ class COMP_VCFReader(VCFReader):
         """
         Docstring for _checkIdx
         
-        :param self: Description
+        
         :param idx: Description
         """
         if idx == '.':
@@ -303,16 +269,34 @@ class COMP_VCFReader(VCFReader):
             return int(idx)
         
 
-    def _handleStraglrLen(self, is_ref):
+    def _constructAllele(self, idxs: list, mots: list):
+        """
+        Docstring for _constructAllele
+        
+        
+        :param idxs: Description
+        :type idxs: list
+        :param mots: Description
+        :type mots: list
+        """
+        allele = ""
+        for idx in idxs:
+            allele += mots[int(idx)]
+        
+        return allele
 
+
+    def _handleStraglrLen(self, is_ref, use_svlen = False):
         if is_ref:
-            # for i, str in enumerate(self.info): # loop over infor and grab data for constructing allele sequence        
-            #     if "SVLEN" in str:
-            #         svlen = int(self.info[i].removeprefix("SVLEN=").split(","))
-
-            return self.end_pos - self.pos 
+            ref_len = 0
+            if use_svlen:
+                for i, str in enumerate(self.info): # loop over infor and grab data for constructing allele sequence        
+                    if "SVLEN" in str:
+                        ref_len = int(self.info[i].removeprefix("SVLEN=").split(","))
+            else:
+                ref_len = self.end_pos - self.pos 
+            return ref_len
         else:
             for i, str in enumerate(self.info): # loop over info and grab number of bases   
                 if "RB" in str:
                     return int(self.info[i].removeprefix("RB=").replace(',', ""))
-

@@ -8,17 +8,22 @@ from helpers.constants import *
 
 
 def mainloop():
-    bed_path = os.path.join(DATA_DIR, "BED_files\\benchmark-catalog-v2.vamos.bed")
-
-    '''    # vcf_list = []
-    # with os.scandir(DATA_DIR) as dir_entries:
-    #     for entry in dir_entries:
-    #         if entry.is_file():
-    #             if entry.path.endswith(".vcf") or entry.path.endswith(".vcf.gz"):
-    #                 vcf_list.append([entry.path, [0,0], False])
+    # PROGRAM SETTINGS/VARIABLES
+    '''    vcf_list = []
+    with os.scandir(DATA_DIR) as dir_entries:
+        for entry in dir_entries:
+            if entry.is_file():
+                if entry.path.endswith(".vcf") or entry.path.endswith(".vcf.gz"):
+                    if entry.path.lower().contains("straglr"):
+                        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.straglr.sorted.vcf"), [0,0], SPECIAL_CASE.STRAGLR],
+                    elif entry.path.lower().contains("vamos"):
+                        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.vamos.sorted.vcf"), [0,0], SPECIAL_CASE.VAMOS],
+                    else:
+                        vcf_list.append([entry.path, [0,0], None])
     '''
-
-          
+    
+    # Input File Paths
+    bed_path = os.path.join(DATA_DIR, "BED_files\\benchmark-catalog-v2.vamos.bed")   
     vcf_list = [
         # the file name, the offset amount (eg. [-1, 0] for 1 based inclusive), and whether it needs special parsing parameters    
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.atarva.sorted.vcf"), [-1, 0], None], 
@@ -29,6 +34,13 @@ def mainloop():
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.strkit.sorted.vcf"), [0,0], None],
         [os.path.join(DATA_DIR, "HG007.30x\\HG007.medaka_to_ref.TR.sorted.vcf"), [-1,0], None]
         ]
+    # Output File Names
+    bed_comp_file = 'bed-comp.tsv'
+    position_comp_file = 'pos-comp.tsv'
+    levenshtein_comp_file = 'lev-comp.tsv'
+    length_comp_file = 'len-comp.tsv'
+    # Program Options
+    trim_alleles = False
 
 
     with ExitStack() as stack: 
@@ -47,17 +59,17 @@ def mainloop():
                                            stk=stack))
             
             # build first line's genotype and save it      
-            vcf_rdrs[i].safeRead()
+            vcf_rdrs[i].VCFParse()
             vcf_rdrs[i].buildGtData()
 
 
-        # open output files and put it into the exit stack
-        bdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "bed-comp.tsv"), "w")) 
-        pdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "pos-comp.tsv"), "w"))
-        lvdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "lev-comp.tsv"), "w"))
-        ldof = stack.enter_context(open(os.path.join(OUTPUT_DIR, "len-comp.tsv"), "w"))
+        # open output files and put them into the exit stack
+        bdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, bed_comp_file), "w")) 
+        pdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, position_comp_file), "w"))
+        lvdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, levenshtein_comp_file), "w"))
+        ldof = stack.enter_context(open(os.path.join(OUTPUT_DIR, length_comp_file), "w"))
         
-        # write metadata to ourput files
+        # write metadata to output files
         bdof_meta, pdof_meta, lvdof_meta, ldof_meta = setupMetadata(vcf_rdrs, header_only=False)
         bdof.write(bdof_meta)
         pdof.write(pdof_meta)
@@ -94,8 +106,12 @@ def mainloop():
                     start_diff = bed.pos - reader.pos
                     end_diff = bed.end_pos - reader.end_pos
                     
-                    if start_diff > 500 or end_diff > 500:
-                        print(f"WARNING: Large Positional difference at {bed.pos} from {reader.path}")
+                    # add start_diff and end_diff to object
+                    if trim_alleles:
+                        for allele in reader.gt_data:
+                            # trim only if the current tool has widened the position
+                            allele.start_trim = start_diff if start_diff > 0 else 0
+                            allele.end_trim = -end_diff if end_diff > 0 else 0
 
                     bdof_out_str += f"\t{start_diff}\t{end_diff}"
 
@@ -105,20 +121,22 @@ def mainloop():
                     # if both readers are not paused or ended
                     if stateCheck(reader) and stateCheck(other_reader):
                         # LVDIST: calculate levenshtein distance of alleles between vcf files
-                        gt_lvdiff, a1_lvdiff, a2_lvdiff, order = compareGt(reader.gt_data_pack, 
-                                                                    other_reader.gt_data_pack,
-                                                                    comp_method=COMP_METHOD.LEVENSHTEIN)
+                        gt_lvdiff, a1_lvdiff, a2_lvdiff, order = compareGt(reader.gt_data, 
+                                                                    other_reader.gt_data,
+                                                                    comp_method=COMP_METHOD.LEVENSHTEIN,
+                                                                    trim=trim_alleles)
                         lvdof_out_str += f"\t{a1_lvdiff}\t{a2_lvdiff}"
                     
                         # LENDIST: calculate difference in allele lengths between vcf files
-                        gt_ldiff, a1_ldiff, a2_ldiff, order = compareGt(reader.gt_data_pack, 
-                                                                other_reader.gt_data_pack, 
+                        gt_ldiff, a1_ldiff, a2_ldiff, order = compareGt(reader.gt_data, 
+                                                                other_reader.gt_data, 
                                                                 comp_method=COMP_METHOD.LENGTH,
-                                                                comp_ord=order)
+                                                                comp_ord=order,
+                                                                trim=trim_alleles)
                         ldof_out_str += f"\t{a1_ldiff}\t{a2_ldiff}"
 
-                        #if a1_ldiff > a1_lvdiff or a2_ldiff > a2_lvdiff:
-                        #   raise Exception("\nFATAL PROGRAM ERROR\nLength difference between strings greater than Levenshtein distance.")
+                        # if a1_ldiff > a1_lvdiff or a2_ldiff > a2_lvdiff:
+                        #    raise Exception("\nFATAL PROGRAM ERROR\nLength difference between strings greater than Levenshtein distance.")
 
                         # POSDIST: calculate difference in positions between vcf files
                         vcf_start_diff = reader.pos - other_reader.pos
@@ -140,7 +158,7 @@ def mainloop():
 
             # read lines for all files
             for rdr in vcf_rdrs:
-                rdr.safeRead()
+                rdr.VCFParse()
 
                 if not rdr.end_state:
                     rdr.buildGtData()   

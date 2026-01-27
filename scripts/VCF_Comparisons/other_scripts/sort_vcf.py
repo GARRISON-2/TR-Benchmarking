@@ -14,7 +14,7 @@ from helpers.constants import *
 # USE CAUTION WHEN RUNNING FULL ORDERING ON LARGE FILES(i.e. setting chrom_only = False)
 
 
-def sortVCF(vcf_rdr, order, stk, chrom_only = True, ):
+def sortVCF(vcf_rdr, order, stk, chrom_only = True):
     return_loc = vcf_rdr.cur_loc
 
     # vcf reader will already error out if the file is not valid, so no need for extensive checks
@@ -67,7 +67,6 @@ def sortVCF(vcf_rdr, order, stk, chrom_only = True, ):
     print(f"File sorted.")
 
 
-
 def getBEDOrder(bed):
     chrom_order = []
     while not bed.end_state:
@@ -78,14 +77,19 @@ def getBEDOrder(bed):
     return chrom_order
 
 
+def grabFromDir(file_type: str, dir_name: str):
+    path_list = []
+    with os.scandir(dir_name) as dir_entries:
+        for entry in dir_entries:
+            if entry.is_file():
+                if entry.path.endswith('.' + file_type) or entry.path.endswith("." + file_type + '.gz'):
+                    vcf_list.append(entry.path)
 
-vcf_list = []
-with os.scandir(os.path.join(DATA_DIR, "HG001.30x")) as dir_entries:
-    for entry in dir_entries:
-        if entry.is_file():
-            if entry.path.endswith(".vcf") or entry.path.endswith(".vcf.gz"):
-                vcf_list.append(entry.path)
+    return path_list
 
+
+# loads all vcf file paths from a given directory into a list
+vcf_list = grabFromDir("vcf", os.path.join(DATA_DIR, "HG001.30x"))
 
 bed_file = "BED_files\\benchmark-catalog-v2.vamos.bed"
 
