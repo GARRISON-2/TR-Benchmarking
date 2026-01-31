@@ -1,5 +1,7 @@
 import os
 import time
+import argparse
+from pathlib import Path
 from contextlib import ExitStack
 from helpers.readers import BEDReader
 from helpers.utils import *
@@ -7,40 +9,38 @@ from helpers.constants import *
 
 
 
-def mainloop():
+def main():
     # PROGRAM SETTINGS/VARIABLES
-    '''    vcf_list = []
-    with os.scandir(DATA_DIR) as dir_entries:
-        for entry in dir_entries:
-            if entry.is_file():
-                if entry.path.endswith(".vcf") or entry.path.endswith(".vcf.gz"):
-                    if entry.path.lower().contains("straglr"):
-                        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.straglr.sorted.vcf"), [0,0], SPECIAL_CASE.STRAGLR],
-                    elif entry.path.lower().contains("vamos"):
-                        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.vamos.sorted.vcf"), [0,0], SPECIAL_CASE.VAMOS],
-                    else:
-                        vcf_list.append([entry.path, [0,0], None])
-    '''
     
+    # set directory variables for clean file i/o
+    PROJ_ROOT = #os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    SAMPLE = "HG007" 
+    DATA_DIR = os.path.join(PROJ_ROOT, '')
+    OUTPUT_DIR = os.path.join(PROJ_ROOT, '')
+
     # Input File Paths
-    bed_path = os.path.join(DATA_DIR, "BED_files\\benchmark-catalog-v2.vamos.bed")   
+    ""
+    bed_path = os.path.join(DATA_DIR, "BED_files\\benchmark-catalog-v2.vamos.bed")  
     vcf_list = [
-        # the file name, the offset amount (eg. [-1, 0] for 1 based inclusive), and whether it needs special parsing parameters    
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.atarva.sorted.vcf"), [-1, 0], None], 
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.strdust.sorted.vcf"), [0,0], None],
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.longTR.sorted.vcf"), [-1,0], None],
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.straglr.sorted.vcf"), [0,0], SPECIAL_CASE.STRAGLR],
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.vamos.sorted.vcf"), [0,0], SPECIAL_CASE.VAMOS],
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.30x.haplotagged.strkit.sorted.vcf"), [0,0], None],
-        [os.path.join(DATA_DIR, "HG007.30x\\HG007.medaka_to_ref.TR.sorted.vcf"), [-1,0], None]
+        # the file name, and whether it needs special parsing parameters    
+        [os.path.join(DATA_DIR, f"{SAMPLE}.30x\\{SAMPLE}.30x.haplotagged.atarva.sorted.vcf"), SETTINGS.OFFSET_START], 
+        [os.path.join(DATA_DIR, f"{SAMPLE}.30x\\{SAMPLE}.30x.haplotagged.strdust.sorted.vcf"), SETTINGS.DEFAULT],
+        [os.path.join(DATA_DIR, f"{SAMPLE}.30x\\{SAMPLE}.30x.haplotagged.longTR.sorted.vcf"), SETTINGS.OFFSET_START],
+        [os.path.join(DATA_DIR, f"{SAMPLE}.30x\\{SAMPLE}.30x.haplotagged.straglr.sorted.vcf"), SETTINGS.STRAGLR],
+        [os.path.join(DATA_DIR, f"{SAMPLE}.30x\\{SAMPLE}.30x.haplotagged.vamos.sorted.vcf"), SETTINGS.VAMOS],
+        [os.path.join(DATA_DIR, f"{SAMPLE}.30x\\{SAMPLE}.30x.haplotagged.strkit.sorted.vcf"),  SETTINGS.DEFAULT],
+        [os.path.join(DATA_DIR, f"{SAMPLE}.30x\\{SAMPLE}.medaka_to_ref.TR.sorted.vcf"), SETTINGS.OFFSET_START]
         ]
+
     # Output File Names
-    bed_comp_file = 'bed-comp.tsv'
-    position_comp_file = 'pos-comp.tsv'
-    levenshtein_comp_file = 'lev-comp.tsv'
-    length_comp_file = 'len-comp.tsv'
+    bed_comp_file = f'{SAMPLE}-bed-comp.tsv'
+    # position_comp_file = 'pos-comp.tsv' # currently commented out - functionally the same as bed comparison
+    levenshtein_comp_file = f'{SAMPLE}-lev-comp.tsv'
+    length_comp_file = f'{SAMPLE}-len-comp.tsv'
+
     # Program Options
-    trim_alleles = False
+    trim_alleles = False # Note: if this is false, the offset amount will only affect the positions, and the actual sequence strings will not be affected
+    motif_len_col = 6 # column number of the motif length stored in the BED file
 
 
     with ExitStack() as stack: 
@@ -54,8 +54,7 @@ def mainloop():
         # setup list of vcf reader objects, and put them in file stack
         for i, vcf_info in enumerate(vcf_list):
             vcf_rdrs.append(setupVCFReader(vcf=vcf_info[0], 
-                                           offset=vcf_info[1], 
-                                           sc=vcf_info[2],
+                                           settings=vcf_info[1],
                                            stk=stack))
             
             # build first line's genotype and save it      
@@ -65,14 +64,14 @@ def mainloop():
 
         # open output files and put them into the exit stack
         bdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, bed_comp_file), "w")) 
-        pdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, position_comp_file), "w"))
+        # pdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, position_comp_file), "w"))
         lvdof = stack.enter_context(open(os.path.join(OUTPUT_DIR, levenshtein_comp_file), "w"))
         ldof = stack.enter_context(open(os.path.join(OUTPUT_DIR, length_comp_file), "w"))
         
         # write metadata to output files
         bdof_meta, pdof_meta, lvdof_meta, ldof_meta = setupMetadata(vcf_rdrs, header_only=False)
         bdof.write(bdof_meta)
-        pdof.write(pdof_meta)
+        # pdof.write(pdof_meta)
         lvdof.write(lvdof_meta)
         ldof.write(ldof_meta)
         
@@ -81,9 +80,9 @@ def mainloop():
 
         # Main Operations loop       
         while bed.cur_line: # loop until BED file reaches end
-            bed_pos_str = f"{bed.chrom}\t{bed.pos}\t{bed.end_pos}"
+            bed_pos_str = f"{bed.chrom}\t{bed.pos}\t{bed.end_pos}\t{bed.cur_line[motif_len_col]}" 
             bdof_out_str = bed_pos_str
-            pdof_out_str = bed_pos_str
+            # pdof_out_str = bed_pos_str
             lvdof_out_str = bed_pos_str
             ldof_out_str = bed_pos_str
 
@@ -102,16 +101,12 @@ def mainloop():
                 if reader.pause or reader.end_state: # if the vcf skipped the current line or has ended
                     bdof_out_str += "\tNA\tNA"
                 else:
-                    # BDDIST: compre vcf ref position with bed
+                    # BDDIST: compare vcf ref position with bed
                     start_diff = bed.pos - reader.pos
                     end_diff = bed.end_pos - reader.end_pos
                     
-                    # add start_diff and end_diff to object
-                    if trim_alleles:
-                        for allele in reader.gt_data:
-                            # trim only if the current tool has widened the position
-                            allele.start_trim = start_diff if start_diff > 0 else 0
-                            allele.end_trim = -end_diff if end_diff > 0 else 0
+                    # add trim amounts to allele Data           
+                    reader.addTrimData(start_diff, end_diff) # only the trim amounts are passed, allele data is not actually trimmed here
 
                     bdof_out_str += f"\t{start_diff}\t{end_diff}"
 
@@ -139,19 +134,19 @@ def mainloop():
                         #    raise Exception("\nFATAL PROGRAM ERROR\nLength difference between strings greater than Levenshtein distance.")
 
                         # POSDIST: calculate difference in positions between vcf files
-                        vcf_start_diff = reader.pos - other_reader.pos
-                        vcf_end_diff = reader.end_pos - other_reader.end_pos
-                        pdof_out_str += f"\t{vcf_start_diff}\t{vcf_end_diff}"
+                        # vcf_start_diff = reader.pos - other_reader.pos
+                        # vcf_end_diff = reader.end_pos - other_reader.end_pos
+                        # pdof_out_str += f"\t{vcf_start_diff}\t{vcf_end_diff}"
 
                     else:
                         lvdof_out_str += "\tNA\tNA"
                         ldof_out_str += "\tNA\tNA"
-                        pdof_out_str += "\tNA\tNA"
+                        # pdof_out_str += "\tNA\tNA"
 
 
             # write data to output files
             bdof.write(bdof_out_str + "\n")   
-            pdof.write(pdof_out_str + "\n")
+            # pdof.write(pdof_out_str + "\n")
             lvdof.write(lvdof_out_str + "\n")   
             ldof.write(ldof_out_str + "\n")
 
@@ -187,4 +182,5 @@ def mainloop():
 
 
 
-mainloop()
+if __name__ == "__main__":
+    main()

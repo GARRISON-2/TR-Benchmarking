@@ -159,6 +159,8 @@ class VCFReader(Reader):
         self.qual = None
         self.filter = None
         self.info = None
+        self.format = None
+        self.sample = None
         self.genotype = None
         
 

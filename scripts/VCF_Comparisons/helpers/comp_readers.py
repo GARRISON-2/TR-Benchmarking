@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from helpers.readers import *
-from helpers.constants import *
+from helpers.constants import SETTINGS, ORDER_METHOD
 
 
 @dataclass
@@ -11,38 +11,34 @@ class alleleData:
     allele_str: str | None = None
     is_ref: bool | None = None
     length: int = 0
-    start_trim = 0
+    start_trim = 0 
     end_trim = 0
 
 
 class COMP_VCFReader(VCFReader):
     
-    def __init__(self, file_path, start_offset = 0, end_offset = 0, pos_only = False, sc = None, pause = False):
+    def __init__(self, file_path, settings = None, pause = False):
         """
         Docstring for __init__
         
-        
+        :param self: Description
         :param file_path: Description
-        :param start_offset: Description
-        :param end_offset: Description
-        :param pos_only: Description
-        :param sc: Description
+        :param settings: Description
         :param pause: Description
         """
         super().__init__(file_path)
-        self.start_off = start_offset
-        self.end_off = end_offset
+        self.start_off = settings.start_offset
+        self.end_off = settings.end_offset
         self.pause = pause
-        self.pos_only = pos_only
         self.skip_num = 0
         self.end_state = False
-        self.spec_case = sc
+        self.settings = settings
         self.gt_data = None
 
 
     def buildGtData(self, sample_col=9, ref=None, alt = None):
         """
-        Docstring for buildGtData
+        Creates list containing 
         
         
         :param sample_col: Description
@@ -63,7 +59,7 @@ class COMP_VCFReader(VCFReader):
             idx_list = list(idx_str[::2]) # grab characters every 2 indices to skip gt seperator(ie. skipping over '|' and '/')
 
             # convert 0 to 0|0 for straglr
-            if self.spec_case == SPECIAL_CASE.STRAGLR:
+            if self.settings == SETTINGS.STRAGLR:
                 if len(idx_list) == 1:
                     idx_list.append(idx_list[0]) 
             
@@ -86,7 +82,7 @@ class COMP_VCFReader(VCFReader):
                     ad.is_ref = False
 
                 # custom handling for straglr since it does not contain sequences
-                if self.spec_case == SPECIAL_CASE.STRAGLR:
+                if self.settings == SETTINGS.STRAGLR:
                     ad.length = self._handleStraglrLen(ad.is_ref)
 
                 elif ad.allele_str is not None:
@@ -134,7 +130,7 @@ class COMP_VCFReader(VCFReader):
         """
         alt = []
 
-        if self.spec_case == SPECIAL_CASE.VAMOS:
+        if self.settings == SETTINGS.VAMOS:
             for i, str in enumerate(info): # loop over info and grab data for constructing allele sequence        
                 if "RU" in str:
                     mot_list = info[i].removeprefix("RU=").split(",")
@@ -169,13 +165,20 @@ class COMP_VCFReader(VCFReader):
                 pos = int(line_list[1]) 
 
                 info_col = line_list[7].split(';') # grab the INFO column
-                end_pos = int(info_col[0].removeprefix("END="))
+                for i, str in enumerate(info_col): # seach for end position marker      
+                    if "END=" in str:
+                        end_str = info_col[i].removeprefix("END=")
+
+                if end_str.isdigit():
+                    end_pos = int(end_str)
+                else:
+                    end_pos = None
 
                 # set specific data to their own parameters for better accessibility
                 self.chrom = line_list[0]             
                 self.pos = pos    
                 self.end_pos = end_pos 
-                self.ref = line_list[3] if not self.pos_only else None
+                self.ref = line_list[3] if not self.settings.pos_only else None
                 self.alt = self.constructAlt(info_col)                
                 self.info = info_col
 
@@ -189,6 +192,14 @@ class COMP_VCFReader(VCFReader):
         return line_list
 
 
+    def addTrimData(self, start_diff, end_diff):
+            for allele in self.gt_data:
+                if allele:
+                    # trim only if the current tool has widened the position
+                    allele.start_trim = start_diff + abs(self.settings.start_offset) if start_diff > 0 else 0 # start offset must be positive
+                    allele.end_trim = -end_diff + (-1 * abs(self.settings.end_offset)) if end_diff > 0 else 0 # end offset must be negative
+
+
     def VCFParse(self):
         """
         Docstring for VCFParse
@@ -199,9 +210,10 @@ class COMP_VCFReader(VCFReader):
 
         try: 
             if not self.pause:  
-                format_method = self.specialFormat if self.pos_only else self.formatLine
+                format_method = self.specialFormat if self.settings != SETTINGS.OFFSET_START and self.settings != SETTINGS.DEFAULT else self.formatLine
                 line = super().read(format_method)  
 
+                # Offset Handling
                 # if the vals have been set already
                 if self.pos and self.end_pos:
                     # add the given offsets to the current positions

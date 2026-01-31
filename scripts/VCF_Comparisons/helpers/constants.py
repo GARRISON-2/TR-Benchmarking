@@ -1,21 +1,19 @@
 from enum import Enum, auto
 import os
 
-# set directory variables for easy file i/o while testing
-PROJ_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-DATA_DIR = os.path.join(PROJ_ROOT, 'local_data')
-OUTPUT_DIR = os.path.join(PROJ_ROOT, 'local_data')
-LOCAL = os.path.join(PROJ_ROOT, 'scripts\\VCF_Comparisons')
-#LOCAL = os.path.join(PROJ_ROOT, 'local_data')
 
 
-class SPECIAL_CASE(Enum):
-    STRAGLR = (auto(), True)
-    VAMOS = (auto(), True)
+class SETTINGS(Enum):
+    STRAGLR = (auto(), True, 0, 0)
+    VAMOS = (auto(), False, 0, 0)
+    DEFAULT = (auto(), False, 0, 0)
+    OFFSET_START = (auto(), False, -1, 0)
 
-    def __init__(self, value ,pos_only):
+    def __init__(self, value, pos_only, start_offset, end_offset):
         self._value_ = value
         self.pos_only = pos_only
+        self.start_offset = start_offset
+        self.end_offset = end_offset
 
 class COMP_ORDER(Enum):
     VERTICAL = auto()

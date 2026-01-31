@@ -22,14 +22,15 @@ def cleanNum(num: int):
 
 def compareAllele(all1: alleleData, all2: alleleData, method=COMP_METHOD.LEVENSHTEIN, trim = False):
     """
-    Docstring for compareAllele
+    Runs comparisons on alleleData object based on input method. If trim is true the allele strings  
+    inside of the allele data pack will be sliced during the comparisons.
     
     :param all1: Description
-    :type all1: str
+    :type all1: alleleData
     :param all2: Description
-    :type all2: str
+    :type all2: alleleData
     :param method: Description
-    :type method: COMP_METHOD
+    :param trim: Bool for whether or not to trim alleles while comparing
     """
     ALLOWED = {'A', 'T', 'C', 'G'}
 
@@ -53,16 +54,18 @@ def compareAllele(all1: alleleData, all2: alleleData, method=COMP_METHOD.LEVENSH
     return None
     
 
-def compareGt(gt1: list, gt2: list, comp_method = COMP_METHOD.LEVENSHTEIN, comp_ord = None, trim = False):
+def compareGt(gt1: list[alleleData], gt2: list[alleleData], comp_method = COMP_METHOD.LEVENSHTEIN, comp_ord = None, trim = False):
     """
-    Docstring for compareGt
+    Compares genotype data list containing the alleleData objects using the compareAllele function.  
+    If the comparison order is not know, will run comparisons on both iterations and return the lesser of the two.  
+    If trim is true allele string will be sliced during comparisons. Returns all None data from comparisons as string: 'NA'.
     
     :param gt1: Description
-    :type gt1: str
+    :type gt1: list[alleleData]
     :param gt2: Description
-    :type gt2: str
-    :param comp_method: Description
-    :param comp_ord: Description
+    :type gt2: list[alleleData]
+    :param comp_method: Comparison Method(either length or levenshtein)
+    :param comp_ord: passed if the correct allele comparisons order is already known
     """
     # pad genotype list lengths to length 2 for compatibility (ie. for handling hemizygous regions)
     gt1 += [None] * (2 - len(gt1))
@@ -128,8 +131,15 @@ def NoneToNA(input):
 
 
 def setupMetadata(vlist: list[COMP_VCFReader], header_only = False):
+    """
+    Function that returns a string containg the formatted meta data and header.  
+    If header_only is true, then only the metadata is not included, and only a formatted header is returned.
+    
+    :param vlist: Description
+    :type vlist: list[COMP_VCFReader]
+    :param header_only: Description
+    """
     # output strings
-    header_start = f"CHROM\tSTART\tEND"
     bdof_meta = "##<BED-VCF Position Comparison>\n"
     pdof_meta = "##<VCF Position Comparison>\n"
     lvdof_meta = "##<VCF Levenshtein Comparison>\n"
@@ -144,21 +154,19 @@ def setupMetadata(vlist: list[COMP_VCFReader], header_only = False):
             pdof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
             lvdof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
             ldof_meta += (f"##FILE_{i}=<Name: {file_name}; Start Offset: {vlist[i].start_off}; End Offset: {vlist[i].end_off}>\n")
-        
-        bdof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
-        pdof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
-        lvdof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
-        ldof_meta += (f"##INFO=<CHROM: Chromosome of BED position>\n")
 
-        bdof_meta += (f"##INFO=<START: Start position from BED file>\n")
-        pdof_meta += (f"##INFO=<START: Start position from BED file>\n")
-        lvdof_meta += (f"##INFO=<START: Start position from BED file>\n")
-        ldof_meta += (f"##INFO=<START: Start position from BED file>\n")
+        # info for first 4 columns, which are the same across all output files
+        first_infos = (
+                       f"##INFO=<CHROM: Chromosome of BED position>\n" \
+                       f"##INFO=<START: Start position from BED file>\n"\
+                       f"##INFO=<END: End position from BED file>\n"\
+                       f"##INFO=<MOT_LEN: Motif length at current position>\n"
+                       )
 
-        bdof_meta += (f"##INFO=<END: End position from BED file>\n")
-        pdof_meta += (f"##INFO=<END: End position from BED file>\n")
-        lvdof_meta += (f"##INFO=<END: End position from BED file>\n")
-        ldof_meta += (f"##INFO=<END: End position from BED file>\n")
+        bdof_meta += first_infos
+        pdof_meta += first_infos
+        lvdof_meta += first_infos
+        ldof_meta += first_infos
 
         bdof_meta += (f"##INFO=<BDDIST_START_i: BED start - FILE_i start>\n")  
         bdof_meta += (f"##INFO=<BDDIST_END_i: BED end - FILE_i end>\n")
@@ -170,10 +178,11 @@ def setupMetadata(vlist: list[COMP_VCFReader], header_only = False):
         ldof_meta += (f"##INFO=<LNDIST_ALL2_i-j: FILE_i allele 2 length - FILE_j allele 2 length>\n")
 
     # Configure column headers for output files
-    bdof_meta += (header_start)
-    pdof_meta += (header_start)
-    lvdof_meta += (header_start)
-    ldof_meta += (header_start)
+    header_start = f"CHROM\tSTART\tEND\tMOT_LEN"
+    bdof_meta += header_start
+    pdof_meta += header_start
+    lvdof_meta += header_start
+    ldof_meta += header_start
     for i in range(len(vlist)):
         for j in range(i+1, len(vlist)):
             pdof_meta += f"\tPSDIST_START_{i}-{j}\tPSDIST_END_{i}-{j}"
@@ -189,34 +198,23 @@ def setupMetadata(vlist: list[COMP_VCFReader], header_only = False):
     return bdof_meta, pdof_meta, lvdof_meta, ldof_meta
 
 
-def setupVCFReader(vcf: str, stk: ExitStack, offset=[0,0], sc = None, skip_head = True, pos_only = False):
+def setupVCFReader(vcf: str, stk: ExitStack, settings, skip_head = True):
     """
-    Docstring for setupVCFReader
-    
-    :param vcf: Description
+    Sets up vcf reader object using the vcf file path, opens the file,  
+    and add it to the provided stack object.
+
+    :param vcf: VCF file path
     :type vcf: str
     :param stk: Description
     :type stk: ExitStack
-    :param offset: Description
-    :param sc: Description
+    :param settings: settings object for vcf reader setup
     :param skip_head: Description
-    :param pos_only: Description
     """
     
     
     try:
         # create VCFReader object for file.  
-        if sc == None:
-            rdr = COMP_VCFReader(file_path=vcf, 
-                        start_offset=offset[0], 
-                        end_offset=offset[1])
-        else: 
-            rdr = COMP_VCFReader(file_path=vcf, 
-                        start_offset=offset[0], 
-                        end_offset=offset[1],
-                        sc=sc,
-                        pos_only=sc.pos_only)
-
+        rdr = COMP_VCFReader(file_path=vcf, settings=settings)
 
         # add vcf to exit stack 
         stk.enter_context(rdr)
@@ -239,3 +237,4 @@ def stateCheck(rdr: COMP_VCFReader):
     :type rdr: COMP_VCFReader
     """
     return (not rdr.pause) and (not rdr.end_state)
+
